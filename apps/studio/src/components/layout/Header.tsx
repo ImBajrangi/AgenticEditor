@@ -12,22 +12,22 @@ import {
   Activity,
   Layers,
   Layout,
+  Sparkles,
+  Sliders,
 } from "lucide-react";
 
-export type WorkspaceMode = "EDIT" | "WORKFLOW" | "REVIEW";
+export type WorkspaceMode = "CREATE" | "REVIEW" | "EXPORT";
 export type WorkspacePreset =
-  | "EDITING"
-  | "AI_EDITING"
-  | "COLOR"
-  | "AUDIO"
-  | "WORKFLOW"
-  | "REVIEW";
+  | "CREATE"
+  | "REVIEW"
+  | "EXPORT"
+  | "PRO_STUDIO";
 
 interface HeaderProps {
   mode: WorkspaceMode;
   setMode: (mode: WorkspaceMode) => void;
-  workspacePreset: WorkspacePreset;
-  onSelectWorkspacePreset: (preset: WorkspacePreset) => void;
+  isProMode: boolean;
+  onToggleProMode: () => void;
   projectName: string;
   onProjectChange?: (name: string) => void;
   canUndo: boolean;
@@ -43,8 +43,8 @@ interface HeaderProps {
 export const Header: React.FC<HeaderProps> = ({
   mode,
   setMode,
-  workspacePreset,
-  onSelectWorkspacePreset,
+  isProMode,
+  onToggleProMode,
   projectName,
   canUndo,
   canRedo,
@@ -57,17 +57,22 @@ export const Header: React.FC<HeaderProps> = ({
 }) => {
   return (
     <header className="top-bar-container" role="banner">
-      {/* 1. Left: Document / Project & Undo / Redo */}
+      {/* 1. Left: Brand & Document Meta */}
       <div className="top-bar-left">
         <div className="brand-section">
-          <div className="brand-icon-box" title="AetherEdit OS Studio">
-            <Layers size={18} />
+          <div className="brand-icon-box" title="AetherEdit OS — Autonomous AI Video Director">
+            <Sparkles size={18} />
           </div>
           <div className="brand-meta">
-            <span className="brand-title">{projectName}</span>
+            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+              <span className="brand-title">{projectName}</span>
+              <span style={{ fontSize: "10px", background: "var(--accent-soft)", color: "var(--accent)", padding: "1px 6px", borderRadius: "4px", fontWeight: 700 }}>
+                AI DIRECTOR
+              </span>
+            </div>
             <div className="brand-sub-badge">
               <span className="save-indicator-dot" />
-              <span>Autosaved 2s ago</span>
+              <span>Autosaved • Ready for direction</span>
             </div>
           </div>
         </div>
@@ -80,7 +85,7 @@ export const Header: React.FC<HeaderProps> = ({
             onClick={onUndo}
             disabled={!canUndo}
             className="btn-icon-subtle"
-            title="Undo (⌘Z)"
+            title="Undo Last AI Edit (⌘Z)"
             aria-label="Undo"
           >
             <Undo2 size={15} />
@@ -97,27 +102,17 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
       </div>
 
-      {/* 2. Center: Mode Switcher [Edit | Workflow | Review] */}
+      {/* 2. Center: 3 Primary Modes [Create | Review | Export] */}
       <div className="top-bar-center">
         <div className="mode-switcher-pill" role="tablist">
           <button
-            onClick={() => setMode("EDIT")}
-            className={`mode-tab-btn ${mode === "EDIT" ? "mode-tab-btn-active" : ""}`}
+            onClick={() => setMode("CREATE")}
+            className={`mode-tab-btn ${mode === "CREATE" ? "mode-tab-btn-active" : ""}`}
             role="tab"
-            aria-selected={mode === "EDIT"}
+            aria-selected={mode === "CREATE"}
           >
-            <Film size={14} />
-            <span>Edit</span>
-          </button>
-
-          <button
-            onClick={() => setMode("WORKFLOW")}
-            className={`mode-tab-btn ${mode === "WORKFLOW" ? "mode-tab-btn-active" : ""}`}
-            role="tab"
-            aria-selected={mode === "WORKFLOW"}
-          >
-            <Workflow size={14} />
-            <span>Workflow</span>
+            <Sparkles size={14} />
+            <span>Create</span>
           </button>
 
           <button
@@ -129,28 +124,46 @@ export const Header: React.FC<HeaderProps> = ({
             <CheckCircle2 size={14} />
             <span>Review Diff</span>
           </button>
+
+          <button
+            onClick={() => {
+              setMode("EXPORT");
+              onOpenRender();
+            }}
+            className={`mode-tab-btn ${mode === "EXPORT" ? "mode-tab-btn-active" : ""}`}
+            role="tab"
+            aria-selected={mode === "EXPORT"}
+          >
+            <Download size={14} />
+            <span>Export</span>
+          </button>
         </div>
       </div>
 
-      {/* 3. Right: Workspace Preset + Diagnostics + Export */}
+      {/* 3. Right: Pro Mode Toggle + System Diagnostics + Settings + Render */}
       <div className="top-bar-right">
-        {/* Workspace Preset Dropdown */}
-        <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-          <Layout size={13} style={{ color: "var(--text-secondary)" }} />
-          <select
-            value={workspacePreset}
-            onChange={(e) => onSelectWorkspacePreset(e.target.value as WorkspacePreset)}
-            className="workspace-preset-select"
-            title="Switch Workspace Preset Layout"
-          >
-            <option value="EDITING">Workspace: Editing</option>
-            <option value="AI_EDITING">Workspace: AI Editing</option>
-            <option value="COLOR">Workspace: Color Grading</option>
-            <option value="AUDIO">Workspace: Audio Mastering</option>
-            <option value="WORKFLOW">Workspace: Workflow DAG</option>
-            <option value="REVIEW">Workspace: Review Diff</option>
-          </select>
-        </div>
+        {/* Pro NLE Mode Toggle (Progressive Disclosure) */}
+        <button
+          onClick={onToggleProMode}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "5px",
+            background: isProMode ? "var(--bg-active)" : "var(--bg-subtle)",
+            border: isProMode ? "1px solid var(--accent)" : "1px solid var(--border)",
+            color: isProMode ? "var(--accent)" : "var(--text-secondary)",
+            padding: "5px 10px",
+            borderRadius: "var(--radius-sm)",
+            fontSize: "11px",
+            fontWeight: 600,
+            cursor: "pointer",
+            transition: "all 0.15s ease",
+          }}
+          title="Toggle between AI-First Director view and full Pro NLE Multi-Track view"
+        >
+          <Sliders size={13} />
+          <span>{isProMode ? "Pro Studio: ON" : "Pro Studio"}</span>
+        </button>
 
         {/* System Diagnostics Trigger */}
         <button
@@ -172,14 +185,14 @@ export const Header: React.FC<HeaderProps> = ({
           <Settings size={15} />
         </button>
 
-        {/* Export Video */}
+        {/* Quick Export Button */}
         <button
           onClick={onOpenRender}
           disabled={isRendering}
           className="export-primary-btn"
         >
           <Download size={14} />
-          <span>{isRendering ? "Compiling..." : "Export Video"}</span>
+          <span>{isRendering ? "Compiling..." : "Export"}</span>
         </button>
       </div>
     </header>

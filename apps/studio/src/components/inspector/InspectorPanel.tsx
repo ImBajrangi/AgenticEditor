@@ -75,7 +75,7 @@ const LUT_PRESETS: LutMetadata[] = [
 interface InspectorPanelProps {
   selectedClip: TimelineClip | null;
   selectedNode: WorkflowNode | null;
-  mode: "EDIT" | "WORKFLOW" | "REVIEW";
+  mode: "CREATE" | "REVIEW" | "EXPORT" | "EDIT" | "WORKFLOW";
   onUpdateClipSpeed?: (clipId: string, speed: number) => void;
   onUpdateClipVolume?: (clipId: string, volumeDb: number) => void;
 }

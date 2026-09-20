@@ -1,18 +1,19 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useCallback } from "react";
-import { Header, WorkspaceMode, WorkspacePreset } from "@/components/layout/Header";
+import React, { useState, useEffect, useRef } from "react";
+import { Header, WorkspaceMode } from "@/components/layout/Header";
 import { ToolRail, ToolRailSection } from "@/components/layout/ToolRail";
-import { ContextToolbar } from "@/components/layout/ContextToolbar";
 import { CommandPalette } from "@/components/layout/CommandPalette";
 import { SystemStatusModal } from "@/components/layout/SystemStatusModal";
 import { DualMonitor } from "@/components/monitors/DualMonitor";
+import { SemanticStoryTimeline } from "@/components/timeline/SemanticStoryTimeline";
 import { MultiTrackTimeline, TimelineEditTool } from "@/components/timeline/MultiTrackTimeline";
-import { VisualNodeGraph } from "@/components/graph/VisualNodeGraph";
-import { MediaBin } from "@/components/assets/MediaBin";
-import { AgentCopilot } from "@/components/agents/AgentCopilot";
+import { AiDirectorCenterPanel } from "@/components/agents/AiDirectorCenterPanel";
 import { ReviewDiffPanel } from "@/components/agents/ReviewDiffPanel";
 import { InspectorPanel } from "@/components/inspector/InspectorPanel";
+import { MediaBin } from "@/components/assets/MediaBin";
+import { VisualNodeGraph } from "@/components/graph/VisualNodeGraph";
+import { AgentCopilot } from "@/components/agents/AgentCopilot";
 import { RenderModal } from "@/components/render/RenderModal";
 import { SettingsModal } from "@/components/settings/SettingsModal";
 import {
@@ -25,7 +26,6 @@ import {
   TimelineIR,
   TimelineClip,
   TimelineHistoryManager,
-  TimelineMutator,
 } from "@aetheredit/timeline-ir";
 import {
   WorkflowGraph,
@@ -34,27 +34,30 @@ import {
 } from "@aetheredit/workflow-engine";
 import { AgentRun } from "@/packages/agent-runtime/src/types";
 import { browserCache } from "@/lib/cache/browser-cache";
-import { Sliders, Sparkles, CheckCircle2, GripVertical, GripHorizontal } from "lucide-react";
+import { X, Workflow, Sparkles, FolderKanban } from "lucide-react";
 
 export default function StudioPage() {
-  // 1. Studio Mode & Workspace Presets
-  const [mode, setMode] = useState<WorkspaceMode>("EDIT");
-  const [workspacePreset, setWorkspacePreset] = useState<WorkspacePreset>("EDITING");
-  const [activeRailSection, setActiveRailSection] = useState<ToolRailSection | null>("MEDIA");
-  const [rightTab, setRightTab] = useState<"PROPERTIES" | "AI_DIRECTOR" | "REVIEW">("PROPERTIES");
-  const [rightPanelWidth, setRightPanelWidth] = useState<number>(340);
-  const [workflowSplitRatio, setWorkflowSplitRatio] = useState<number>(50); // 50% graph / 50% timeline
-  const [isResizingRight, setIsResizingRight] = useState(false);
-  const [isResizingWorkflow, setIsResizingWorkflow] = useState(false);
+  // 1. Studio Mode: 3 Primary Modes [CREATE | REVIEW | EXPORT]
+  const [mode, setMode] = useState<WorkspaceMode>("CREATE");
+  const [isProMode, setIsProMode] = useState<boolean>(false);
+  const [activeRailSection, setActiveRailSection] = useState<ToolRailSection | null>(null);
 
+  // Workflow Drawer / Modal
+  const [showWorkflowModal, setShowWorkflowModal] = useState(false);
+
+  // Modals & Panels
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [systemStatusOpen, setSystemStatusOpen] = useState(false);
+  const [settingsModalOpen, setSettingsModalOpen] = useState(false);
+  const [renderModalOpen, setRenderModalOpen] = useState(false);
 
+  // Project Metadata & Engine Policy
   const [projectName, setProjectName] = useState("Travel Campaign 2026");
   const [modelPolicy, setModelPolicy] = useState<"AUTO" | "CLOUD" | "LOCAL">("AUTO");
   const [aspectRatio, setAspectRatio] = useState<"16:9" | "9:16">("16:9");
   const [isProxyMode, setIsProxyMode] = useState(true);
-  const [openAiOnRun, setOpenAiOnRun] = useState(true);
+  const [geminiApiKey, setGeminiApiKey] = useState("");
+  const [localEndpoint, setLocalEndpoint] = useState("http://localhost:11434/v1");
 
   // 2. Timeline & History
   const [timeline, setTimeline] = useState<TimelineIR>(SAMPLE_TIMELINE_TRAVEL);
@@ -69,7 +72,7 @@ export default function StudioPage() {
   const [outPoint, setOutPoint] = useState<number | null>(null);
   const fps = 30;
 
-  // 4. Selections & Highlighting
+  // 4. Selections
   const [selectedAsset, setSelectedAsset] = useState<MediaAsset | null>(SAMPLE_ASSETS[0]);
   const [selectedClip, setSelectedClip] = useState<TimelineClip | null>(
     SAMPLE_TIMELINE_TRAVEL.tracks[0].clips[0] || null
@@ -78,7 +81,7 @@ export default function StudioPage() {
     SAMPLE_WORKFLOW_TRAVEL.nodes[0] || null
   );
 
-  // 5. Tools & Snapping
+  // 5. Pro Timeline Tools
   const [activeTool, setActiveTool] = useState<TimelineEditTool>("SELECT");
   const [isSnapping, setIsSnapping] = useState(true);
   const [isMagnetic, setIsMagnetic] = useState(true);
@@ -88,14 +91,12 @@ export default function StudioPage() {
   const [workflow, setWorkflow] = useState<WorkflowGraph>(SAMPLE_WORKFLOW_TRAVEL);
   const [executionState, setExecutionState] = useState<WorkflowExecutionState | null>(null);
   const [isWorkflowRunning, setIsWorkflowRunning] = useState(false);
-  const [approvalModalOpen, setApprovalModalOpen] = useState(false);
 
   // 7. AI Copilot State
   const [isAiThinking, setIsAiThinking] = useState(false);
   const [activeAgentRun, setActiveAgentRun] = useState<AgentRun | null>(null);
 
   // 8. Render Engine State
-  const [renderModalOpen, setRenderModalOpen] = useState(false);
   const [isRendering, setIsRendering] = useState(false);
   const [renderResult, setRenderResult] = useState<{
     success: boolean;
@@ -104,11 +105,6 @@ export default function StudioPage() {
     fileSizeBytes?: number;
     hardwareAccel?: string;
   } | null>(null);
-
-  // 9. Settings State
-  const [settingsModalOpen, setSettingsModalOpen] = useState(false);
-  const [geminiApiKey, setGeminiApiKey] = useState("");
-  const [localEndpoint, setLocalEndpoint] = useState("http://localhost:11434/v1");
 
   // Cache restoration on mount
   useEffect(() => {
@@ -121,11 +117,6 @@ export default function StudioPage() {
     if (cachedApiKey) setGeminiApiKey(cachedApiKey);
     const cachedEndpoint = browserCache.get<string>("local_ai_endpoint");
     if (cachedEndpoint) setLocalEndpoint(cachedEndpoint);
-
-    const cachedOpenAiPref = browserCache.get<boolean>("pref_open_ai_on_run");
-    if (cachedOpenAiPref !== null && cachedOpenAiPref !== undefined) {
-      setOpenAiOnRun(cachedOpenAiPref);
-    }
   }, []);
 
   const updateHistoryState = () => {
@@ -133,67 +124,36 @@ export default function StudioPage() {
     setCanRedo(historyRef.current.canRedo());
   };
 
-  // Compute highlighted clip IDs from workflow node selection (Point #7)
-  const getHighlightedClipIdsForNode = (node: WorkflowNode | null): string[] => {
-    if (!node) return [];
-    const id = node.id.toLowerCase();
-    const cat = node.category.toLowerCase();
-    const allClips = timeline.tracks.flatMap((t) => t.clips);
-
-    if (id.includes("silence") || id.includes("cut") || id.includes("voice")) {
-      return allClips.filter((c) => c.name.toLowerCase().includes("interview") || c.name.toLowerCase().includes("dialogue")).map((c) => c.id);
-    }
-    if (id.includes("lut") || id.includes("color") || id.includes("grade")) {
-      return allClips.filter((c) => c.assetId.includes("drone") || c.assetId.includes("surf") || c.assetId.includes("beach")).map((c) => c.id);
-    }
-    if (id.includes("audio") || id.includes("duck") || id.includes("norm")) {
-      return allClips.filter((c) => c.assetId.includes("audio") || c.name.toLowerCase().includes("music") || c.name.toLowerCase().includes("dialogue")).map((c) => c.id);
-    }
-    if (id.includes("reframe") || id.includes("social")) {
-      return allClips.slice(0, 2).map((c) => c.id);
-    }
-    return [allClips[0]?.id].filter(Boolean) as string[];
-  };
-
-  const highlightedClipIds = getHighlightedClipIdsForNode(selectedNode);
-
-  // Playhead loop
+  // Playhead animation loop
   useEffect(() => {
-    let animationFrameId: number;
-    let lastTime = performance.now();
-
-    const loop = (time: number) => {
-      if (isPlaying) {
-        const deltaSec = (time - lastTime) / 1000;
-        if (deltaSec >= 1 / fps) {
-          setCurrentFrame((prev) => {
-            if (outPoint !== null && prev >= outPoint) {
-              return inPoint !== null ? inPoint : 0;
-            }
-            return prev >= 630 ? 0 : prev + 1;
-          });
-          lastTime = time;
-        }
-      }
-      animationFrameId = requestAnimationFrame(loop);
-    };
-
-    animationFrameId = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(animationFrameId);
+    let interval: NodeJS.Timeout;
+    if (isPlaying) {
+      interval = setInterval(() => {
+        setCurrentFrame((prev) => {
+          const maxFrames = 630;
+          const endLimit = outPoint !== null ? outPoint : maxFrames;
+          if (prev >= endLimit) {
+            setIsPlaying(false);
+            return inPoint !== null ? inPoint : 0;
+          }
+          return prev + 1;
+        });
+      }, 1000 / fps);
+    }
+    return () => clearInterval(interval);
   }, [isPlaying, fps, inPoint, outPoint]);
 
-  // Global DaVinci Resolve-Class Keyboard Shortcuts
+  // Global Keyboard Shortcuts (J-K-L, Space, ⌘Z, ⌘K, I/O)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
-        return;
-      }
-      // Space: Toggle Play / Pause
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+
+      // Space: Play / Pause
       if (e.code === "Space") {
         e.preventDefault();
         setIsPlaying((prev) => !prev);
       }
-      // Cmd/Ctrl + Z: Undo / Redo
+      // Undo / Redo: ⌘Z / ⌘⇧Z
       else if (e.key === "z" && (e.metaKey || e.ctrlKey) && !e.shiftKey) {
         e.preventDefault();
         handleUndo();
@@ -206,7 +166,7 @@ export default function StudioPage() {
         e.preventDefault();
         setCommandPaletteOpen((prev) => !prev);
       }
-      // J-K-L Shuttle Controls (DaVinci Standard)
+      // J-K-L Shuttle Controls
       else if ((e.key === "j" || e.key === "J") && !e.metaKey && !e.ctrlKey) {
         e.preventDefault();
         setIsPlaying(false);
@@ -227,141 +187,18 @@ export default function StudioPage() {
         setCurrentFrame((prev) => Math.min(630, prev + (e.shiftKey ? 10 : 1)));
       }
       // In & Out Mark Points (I / O)
-      else if ((e.key === "i" || e.key === "I") && !e.metaKey && !e.ctrlKey && !e.shiftKey) {
+      else if ((e.key === "i" || e.key === "I") && !e.metaKey && !e.ctrlKey) {
         e.preventDefault();
         setInPoint(currentFrame);
-      } else if ((e.key === "o" || e.key === "O") && !e.metaKey && !e.ctrlKey && !e.shiftKey) {
+      } else if ((e.key === "o" || e.key === "O") && !e.metaKey && !e.ctrlKey) {
         e.preventDefault();
         setOutPoint(currentFrame);
-      } else if ((e.key === "x" || e.key === "X") && (e.altKey || e.metaKey)) {
-        e.preventDefault();
-        setInPoint(null);
-        setOutPoint(null);
-      }
-      // Home / End: Jump to Start / End
-      else if (e.key === "Home" || (e.key === "ArrowUp" && e.shiftKey)) {
-        e.preventDefault();
-        setCurrentFrame(inPoint !== null ? inPoint : 0);
-      } else if (e.key === "End" || (e.key === "ArrowDown" && e.shiftKey)) {
-        e.preventDefault();
-        setCurrentFrame(outPoint !== null ? outPoint : 630);
-      }
-      // Tool Shortcuts: V (Select), C (Razor), B (Ripple), N (Roll), Y (Slip)
-      else if (e.key === "c" || e.key === "C") {
-        setActiveTool("RAZOR");
-      } else if (e.key === "v" || e.key === "V") {
-        setActiveTool("SELECT");
-      } else if (e.key === "b" || e.key === "B") {
-        setActiveTool("RIPPLE");
-      } else if (e.key === "n" || e.key === "N") {
-        setActiveTool("ROLL");
-      } else if (e.key === "y" || e.key === "Y") {
-        setActiveTool("SLIP");
-      } else if (e.key === "S" && e.shiftKey) {
-        console.log("Track solo toggled via Shift+S");
-      } else if ((e.key === "s" || e.key === "S") && !e.shiftKey) {
-        setIsSnapping((prev) => !prev);
-      } else if (e.key === "m" || e.key === "M") {
-        console.log("Marker added at frame:", currentFrame);
-      }
-      // Zoom Shortcuts: Shift + Z (Fit), Cmd + / Cmd -
-      else if (e.key === "Z" && e.shiftKey && !e.metaKey) {
-        setZoomLevel(1.0);
-      } else if ((e.key === "=" || e.key === "+") && (e.metaKey || e.ctrlKey)) {
-        e.preventDefault();
-        setZoomLevel((prev) => Math.min(3.0, parseFloat((prev + 0.25).toFixed(2))));
-      } else if (e.key === "-" && (e.metaKey || e.ctrlKey)) {
-        e.preventDefault();
-        setZoomLevel((prev) => Math.max(0.4, parseFloat((prev - 0.25).toFixed(2))));
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [canUndo, canRedo, currentFrame, inPoint, outPoint]);
-
-  // Workspace Preset Switcher Logic with Real Layout State (Point #13)
-  const handleSelectWorkspacePreset = (preset: WorkspacePreset) => {
-    setWorkspacePreset(preset);
-    if (preset === "EDITING") {
-      setMode("EDIT");
-      setRightTab("PROPERTIES");
-      setRightPanelWidth(320);
-      setZoomLevel(1.0);
-      setActiveRailSection("MEDIA");
-      setActiveTool("SELECT");
-    } else if (preset === "AI_EDITING") {
-      setMode("EDIT");
-      setRightTab("AI_DIRECTOR");
-      setRightPanelWidth(380);
-      setZoomLevel(1.25);
-      setActiveRailSection("MEDIA");
-      setActiveTool("SELECT");
-    } else if (preset === "COLOR") {
-      setMode("EDIT");
-      setRightTab("PROPERTIES");
-      setRightPanelWidth(420);
-      setZoomLevel(1.0);
-    } else if (preset === "AUDIO") {
-      setMode("EDIT");
-      setRightTab("PROPERTIES");
-      setRightPanelWidth(380);
-      setZoomLevel(1.5);
-    } else if (preset === "WORKFLOW") {
-      setMode("WORKFLOW");
-      setWorkflowSplitRatio(50);
-      setRightTab("PROPERTIES");
-    } else if (preset === "REVIEW") {
-      setMode("REVIEW");
-      setRightTab("REVIEW");
-      setRightPanelWidth(380);
-      setActiveRailSection(null);
-    }
-  };
-
-  // Mouse drag handlers for Right Panel resizing (Point #4)
-  const handleRightResizeMouseDown = (e: React.MouseEvent) => {
-    e.preventDefault();
-    setIsResizingRight(true);
-  };
-
-  // Mouse drag handlers for Workflow split view resizing (Point #6)
-  const handleWorkflowResizeMouseDown = (e: React.MouseEvent) => {
-    e.preventDefault();
-    setIsResizingWorkflow(true);
-  };
-
-  useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      if (isResizingRight) {
-        const newWidth = Math.min(480, Math.max(300, window.innerWidth - e.clientX));
-        setRightPanelWidth(newWidth);
-      }
-      if (isResizingWorkflow) {
-        const container = document.querySelector(".center-workspace-stage");
-        if (container) {
-          const rect = container.getBoundingClientRect();
-          const offsetY = e.clientY - rect.top;
-          const ratio = Math.min(80, Math.max(20, Math.round((offsetY / rect.height) * 100)));
-          setWorkflowSplitRatio(ratio);
-        }
-      }
-    };
-
-    const handleMouseUp = () => {
-      setIsResizingRight(false);
-      setIsResizingWorkflow(false);
-    };
-
-    if (isResizingRight || isResizingWorkflow) {
-      window.addEventListener("mousemove", handleMouseMove);
-      window.addEventListener("mouseup", handleMouseUp);
-    }
-    return () => {
-      window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("mouseup", handleMouseUp);
-    };
-  }, [isResizingRight, isResizingWorkflow]);
 
   // Undo / Redo Handlers (Single ⌘Z reverts entire AI edit transaction!)
   const handleUndo = () => {
@@ -382,155 +219,50 @@ export default function StudioPage() {
     }
   };
 
-  // Split Clip
-  const handleSplitClip = (clipId: string, splitFrame: number) => {
-    try {
-      const next = historyRef.current.pushMutation({
-        type: "SPLIT_CLIP",
-        trackId: "trk_v1_primary",
-        clipId,
-        splitFrame,
-      });
-      setTimeline(next);
-      browserCache.set("active_timeline", next);
-      updateHistoryState();
-    } catch (err) {
-      console.warn("Split error:", err);
-    }
-  };
-
-  // Insert Asset to Timeline
-  const handleInsertAsset = (asset: MediaAsset) => {
-    const track = timeline.tracks.find((t) => (asset.type === "AUDIO" ? t.type === "AUDIO" : t.type === "VIDEO"));
-    if (!track) return;
-
-    const newClip: TimelineClip = {
-      id: `clip_${Date.now()}`,
-      assetId: asset.id,
-      name: asset.title,
-      timelineRange: { start: currentFrame, duration: Math.min(240, asset.durationFrames) },
-      sourceRange: { in: 0, out: Math.min(240, asset.durationFrames) },
-      speed: 1.0,
-      transform: { position: { x: 0, y: 0 }, scale: { x: 1, y: 1 }, rotation: 0, opacity: 1 },
-      effects: [],
-    };
-
-    const next = historyRef.current.pushMutation({
-      type: "INSERT_CLIP",
-      trackId: track.id,
-      clip: newClip,
-    });
-    setTimeline(next);
-    browserCache.set("active_timeline", next);
-    updateHistoryState();
-    setSelectedClip(newClip);
-  };
-
-  // AI Prompt Execution (Point #5: Auto-open based on user preference, Point #20: 1-Stroke Atomic Transaction Undo)
-  const handleExecuteAiPrompt = async (
-    promptText: string,
-    options?: { scope?: string; intensity?: number; params?: Record<string, any> }
-  ): Promise<AgentRun | void> => {
+  // Direct AI Execution
+  const handleExecuteAiPrompt = async (promptText: string) => {
     setIsAiThinking(true);
-    if (openAiOnRun) {
-      setRightTab("AI_DIRECTOR");
-    }
-
     try {
-      const res = await fetch("/api/ai/runs", {
+      const res = await fetch("/api/agents", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          projectId: "proj_travel_01",
           prompt: promptText,
           timeline,
-          provider: modelPolicy,
-          options,
+          assets: SAMPLE_ASSETS,
+          modelPolicy,
         }),
       });
 
       const data = await res.json();
       if (data.success && data.run) {
         setActiveAgentRun(data.run);
-
-        // Atomic Transaction Push: Entire batch is committed into 1 undo step!
-        if (data.run.appliedMutations && data.run.appliedMutations.length > 0) {
-          const next = historyRef.current.pushTransaction(
-            data.run.appliedMutations,
-            `AI Directorial Transaction: ${promptText}`
-          );
-          setTimeline(next);
-          browserCache.set("active_timeline", next);
-          updateHistoryState();
-        } else if (data.run.currentTimeline) {
-          const next = historyRef.current.pushSnapshot(
-            data.run.currentTimeline,
-            `AI Directorial Edit: ${promptText}`
-          );
-          setTimeline(next);
-          browserCache.set("active_timeline", next);
+        if (data.run.mutations && data.run.mutations.length > 0) {
+          let updated = timeline;
+          for (const mut of data.run.mutations) {
+            updated = historyRef.current.pushMutation(mut);
+          }
+          setTimeline(updated);
+          browserCache.set("active_timeline", updated);
           updateHistoryState();
         }
-        return data.run;
       }
     } catch (err) {
-      console.error("AI execution error:", err);
+      console.error("AI Direct error:", err);
     } finally {
       setIsAiThinking(false);
     }
   };
 
-  // Workflow DAG Execution
-  const handleRunWorkflow = async () => {
-    setIsWorkflowRunning(true);
-    try {
-      const res = await fetch("/api/workflows", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ graph: workflow, action: "RUN" }),
-      });
-
-      const data = await res.json();
-      if (data.success && data.state) {
-        setExecutionState(data.state);
-        if (data.state.status === "SUSPENDED_FOR_APPROVAL") {
-          setApprovalModalOpen(true);
-        }
-      }
-    } catch (err) {
-      console.error("Workflow error:", err);
-    } finally {
-      setIsWorkflowRunning(false);
-    }
-  };
-
-  // Workflow Resume on Approval
-  const handleApprovalResume = async (decision: "APPROVED" | "REJECTED", notes?: string) => {
-    setApprovalModalOpen(false);
-    if (!executionState) return;
-
-    setIsWorkflowRunning(true);
-    try {
-      const res = await fetch("/api/workflows", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          graph: workflow,
-          action: "RESUME",
-          existingState: executionState,
-          decision,
-          feedbackNotes: notes,
-        }),
-      });
-
-      const data = await res.json();
-      if (data.success && data.state) {
-        setExecutionState(data.state);
-      }
-    } catch (err) {
-      console.error("Approval resume error:", err);
-    } finally {
-      setIsWorkflowRunning(false);
+  // Handle ToolRail Section Clicks
+  const handleRailSectionSelect = (section: ToolRailSection) => {
+    if (section === "REVIEW") {
+      setMode("REVIEW");
+      setActiveRailSection(null);
+    } else if (activeRailSection === section) {
+      setActiveRailSection(null);
+    } else {
+      setActiveRailSection(section);
     }
   };
 
@@ -561,35 +293,14 @@ export default function StudioPage() {
     }
   };
 
-  const handleCommandAction = (actionId: string) => {
-    if (actionId === "ai_dead_air") {
-      handleExecuteAiPrompt("Cut dead air over 400 milliseconds and ripple downstream clips.");
-    } else if (actionId === "ai_cinematic") {
-      handleExecuteAiPrompt("Make this more cinematic with 3D LUT and ASL dynamic pacing.");
-    } else if (actionId === "ai_reframe") {
-      setAspectRatio("9:16");
-      handleExecuteAiPrompt("Auto-reframe timeline into 9:16 vertical video tracking subject.");
-    } else if (actionId === "split_clip") {
-      if (selectedClip) handleSplitClip(selectedClip.id, currentFrame);
-    } else if (actionId === "switch_workflow") {
-      setMode("WORKFLOW");
-    } else if (actionId === "switch_timeline") {
-      setMode("EDIT");
-    } else if (actionId === "export_master") {
-      setRenderModalOpen(true);
-    } else if (actionId === "open_settings") {
-      setSettingsModalOpen(true);
-    }
-  };
-
   return (
     <div className="studio-root">
-      {/* 1. Clean Top Bar (64px) */}
+      {/* 1. Clean Top Bar (64px) with 3 Primary Modes [Create | Review | Export] + Pro Toggle */}
       <Header
         mode={mode}
         setMode={setMode}
-        workspacePreset={workspacePreset}
-        onSelectWorkspacePreset={handleSelectWorkspacePreset}
+        isProMode={isProMode}
+        onToggleProMode={() => setIsProMode(!isProMode)}
         projectName={projectName}
         onProjectChange={setProjectName}
         canUndo={canUndo}
@@ -606,250 +317,374 @@ export default function StudioPage() {
       />
 
       {/* 2. Main Studio Workspace Body */}
-      <div className="studio-body-layout">
-        {/* Narrow Tool Rail (88px) */}
+      <div className="studio-body-layout" style={{ display: "flex", flex: 1, overflow: "hidden" }}>
+        {/* Simplified Tool Rail (4 Items: PROJECT, ASSETS, AI, REVIEW) */}
         <ToolRail
           activeSection={activeRailSection}
-          onSelectSection={(sec) => setActiveRailSection(activeRailSection === sec ? null : sec)}
+          onSelectSection={handleRailSectionSelect}
+          isProMode={isProMode}
+          onToggleProMode={() => setIsProMode(!isProMode)}
         />
 
-        {/* Left Drawer / Media Browser (300px) */}
-        {activeRailSection && (
-          <div className="left-drawer-panel">
+        {/* Left Contextual Drawer (320px) */}
+        {activeRailSection === "ASSETS" && (
+          <div className="left-drawer-panel" style={{ width: "320px", flexShrink: 0, borderRight: "1px solid var(--border)" }}>
             <MediaBin
               assets={SAMPLE_ASSETS}
               selectedAssetId={selectedAsset?.id || null}
               onSelectAsset={setSelectedAsset}
-              onInsertToTimeline={handleInsertAsset}
+              onInsertToTimeline={(asset) => setSelectedAsset(asset)}
               isProxyMode={isProxyMode}
               onToggleProxyMode={setIsProxyMode}
             />
           </div>
         )}
 
-        {/* Center Workspace Stage */}
-        <main className="center-workspace-stage">
-          {mode === "WORKFLOW" ? (
-            /* Split View: Visual DAG on Top + Live Timeline on Bottom with Draggable Divider (Point #6, #7) */
-            <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", height: "100%" }}>
-              {/* Top: Visual Node Graph */}
-              <div style={{ height: `${workflowSplitRatio}%`, overflow: "hidden", minHeight: "160px" }}>
-                <VisualNodeGraph
-                  graph={workflow}
-                  executionState={executionState}
-                  isRunning={isWorkflowRunning}
-                  onRunWorkflow={handleRunWorkflow}
-                  onResetWorkflow={() => setExecutionState(null)}
-                  selectedNodeId={selectedNode?.id || null}
-                  onSelectNode={setSelectedNode}
-                  onOpenApproval={() => setApprovalModalOpen(true)}
+        {activeRailSection === "PROJECT" && (
+          <div className="left-drawer-panel" style={{ width: "320px", flexShrink: 0, padding: "16px", borderRight: "1px solid var(--border)", background: "var(--bg-surface)" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "14px", paddingBottom: "8px", borderBottom: "1px solid var(--border)" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                <FolderKanban size={16} style={{ color: "var(--accent)" }} />
+                <span style={{ fontSize: "13px", fontWeight: 700 }}>Project Settings</span>
+              </div>
+              <button onClick={() => setActiveRailSection(null)} style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--text-muted)" }}>
+                <X size={14} />
+              </button>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "10px", fontSize: "12px" }}>
+              <div>
+                <label style={{ display: "block", color: "var(--text-secondary)", marginBottom: "4px" }}>Project Name</label>
+                <input
+                  type="text"
+                  value={projectName}
+                  onChange={(e) => setProjectName(e.target.value)}
+                  style={{ width: "100%", padding: "6px 8px", border: "1px solid var(--border)", borderRadius: "4px" }}
                 />
               </div>
+              <div>
+                <label style={{ display: "block", color: "var(--text-secondary)", marginBottom: "4px" }}>Target Platform & Format</label>
+                <div style={{ display: "flex", gap: "6px" }}>
+                  <button
+                    onClick={() => setAspectRatio("16:9")}
+                    style={{ flex: 1, padding: "6px", border: aspectRatio === "16:9" ? "1px solid var(--accent)" : "1px solid var(--border)", background: aspectRatio === "16:9" ? "var(--accent-soft)" : "var(--bg-surface)", borderRadius: "4px", fontWeight: 600 }}
+                  >
+                    16:9 Cinema / YT
+                  </button>
+                  <button
+                    onClick={() => setAspectRatio("9:16")}
+                    style={{ flex: 1, padding: "6px", border: aspectRatio === "9:16" ? "1px solid var(--accent)" : "1px solid var(--border)", background: aspectRatio === "9:16" ? "var(--accent-soft)" : "var(--bg-surface)", borderRadius: "4px", fontWeight: 600 }}
+                  >
+                    9:16 TikTok / Reels
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
-              {/* Draggable Divider with Quick Ratio Buttons */}
-              <div
-                onMouseDown={handleWorkflowResizeMouseDown}
-                style={{
-                  height: "8px",
-                  background: isResizingWorkflow ? "var(--accent)" : "var(--border)",
-                  cursor: "row-resize",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  position: "relative",
-                  zIndex: 20,
-                  transition: "background 0.1s ease",
-                }}
-                title="Drag to resize Graph / Timeline split view"
-              >
-                <div style={{ display: "flex", gap: "2px", background: "var(--bg-surface)", padding: "1px 6px", borderRadius: "8px", border: "1px solid var(--border)", fontSize: "9px", color: "var(--text-muted)", pointerEvents: "none" }}>
-                  <span>{workflowSplitRatio}% Graph</span>
-                  <span>/</span>
-                  <span>{100 - workflowSplitRatio}% Timeline</span>
+        {activeRailSection === "AI" && (
+          <div className="left-drawer-panel" style={{ width: "360px", flexShrink: 0, borderRight: "1px solid var(--border)" }}>
+            <AgentCopilot
+              onExecutePrompt={handleExecuteAiPrompt}
+              isThinking={isAiThinking}
+              approvalModalOpen={false}
+              onApprove={() => {}}
+              onReject={() => {}}
+              onCloseApproval={() => {}}
+              activeRun={activeAgentRun}
+              selectedClip={selectedClip}
+              projectName={projectName}
+            />
+          </div>
+        )}
+
+        {/* Main Center Work Area */}
+        <main style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-app)" }}>
+          {/* ========================================================
+              MODE 1: CREATE (AI Director First, Monitor, Timeline)
+             ======================================================== */}
+          {mode === "CREATE" && (
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+              {/* Upper Section: 60% AI Director + 25-40% Program Monitor */}
+              <div style={{ flex: "1 1 65%", display: "flex", overflow: "hidden", minHeight: "340px" }}>
+                {/* Left/Center: AI Director Flagship Centerpiece (60%) */}
+                <div style={{ flex: "0 0 60%", height: "100%", overflowY: "auto" }}>
+                  <AiDirectorCenterPanel
+                    onDirectPrompt={handleExecuteAiPrompt}
+                    isThinking={isAiThinking}
+                    activeRun={activeAgentRun}
+                    onOpenWorkflowGraph={() => setShowWorkflowModal(true)}
+                    onOpenReviewDiff={() => setMode("REVIEW")}
+                    aspectRatio={aspectRatio}
+                    onToggleAspectRatio={() => setAspectRatio((prev) => (prev === "16:9" ? "9:16" : "16:9"))}
+                  />
+                </div>
+
+                {/* Right: Program Monitor (40%) */}
+                <div style={{ flex: "0 0 40%", height: "100%", display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-dark-stage)" }}>
+                  <DualMonitor
+                    selectedAsset={selectedAsset}
+                    isPlaying={isPlaying}
+                    onTogglePlay={() => setIsPlaying(!isPlaying)}
+                    currentFrame={currentFrame}
+                    totalFrames={630}
+                    fps={fps}
+                    aspectRatio={aspectRatio}
+                    onToggleAspectRatio={() => setAspectRatio((prev) => (prev === "16:9" ? "9:16" : "16:9"))}
+                    activeClipTitle={selectedClip?.name}
+                    activeLut={selectedClip?.effects.find((e) => e.pluginId.includes("lut"))?.parameters.lut as string}
+                    onSeek={setCurrentFrame}
+                    inPoint={inPoint}
+                    outPoint={outPoint}
+                    onSetInPoint={setInPoint}
+                    onSetOutPoint={setOutPoint}
+                  />
                 </div>
               </div>
 
-              {/* Bottom: Live Multi-Track Timeline in Workflow Mode with Node Highlight (Point #7) */}
-              <div style={{ height: `${100 - workflowSplitRatio}%`, overflow: "hidden", minHeight: "160px" }}>
-                <MultiTrackTimeline
-                  timeline={timeline}
+              {/* Lower Section: 15-35% Timeline */}
+              <div style={{ flex: "0 0 35%", minHeight: "220px", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+                {isProMode ? (
+                  /* Pro Multi-Track Timeline */
+                  <MultiTrackTimeline
+                    timeline={timeline}
+                    currentFrame={currentFrame}
+                    onSeek={setCurrentFrame}
+                    selectedClipId={selectedClip?.id || null}
+                    onSelectClip={setSelectedClip}
+                    onSplitClip={(clipId, frame) => {
+                      const next = historyRef.current.pushMutation({
+                        type: "SPLIT_CLIP",
+                        trackId: "trk_v1_primary",
+                        clipId,
+                        splitFrame: frame,
+                      });
+                      setTimeline(next);
+                      updateHistoryState();
+                    }}
+                    activeTool={activeTool}
+                    setActiveTool={setActiveTool}
+                    isSnapping={isSnapping}
+                    setIsSnapping={setIsSnapping}
+                    isMagnetic={isMagnetic}
+                    setIsMagnetic={setIsMagnetic}
+                    zoomLevel={zoomLevel}
+                    setZoomLevel={setZoomLevel}
+                    inPoint={inPoint}
+                    outPoint={outPoint}
+                  />
+                ) : (
+                  /* Default AI Semantic Story Timeline */
+                  <SemanticStoryTimeline
+                    timeline={timeline}
+                    currentFrame={currentFrame}
+                    totalFrames={630}
+                    fps={fps}
+                    isPlaying={isPlaying}
+                    onTogglePlay={() => setIsPlaying(!isPlaying)}
+                    onSeek={setCurrentFrame}
+                    onSelectClip={setSelectedClip}
+                    selectedClip={selectedClip}
+                    onToggleProMode={() => setIsProMode(true)}
+                    onDirectAction={(action, data) => {
+                      if (action === "IMPROVE_ACT") {
+                        handleExecuteAiPrompt(`Improve pacing and cut transitions for ${data.name} section.`);
+                      } else if (action === "SHORTEN_CLIP") {
+                        handleExecuteAiPrompt(`Shorten clip "${data.name}" by 15% and tighten pacing.`);
+                      } else if (action === "REFRAME_CLIP") {
+                        setAspectRatio("9:16");
+                        handleExecuteAiPrompt(`Auto-reframe clip "${data.name}" to 9:16 vertical tracking.`);
+                      } else if (action === "MATCH_COLOR") {
+                        handleExecuteAiPrompt(`Match cinematic Kodak color grade for clip "${data.name}".`);
+                      } else if (action === "REPLACE_CLIP") {
+                        handleExecuteAiPrompt(`Find and replace clip "${data.name}" with highest quality alternate angle.`);
+                      }
+                    }}
+                  />
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ========================================================
+              MODE 2: REVIEW (Prominent Review Diff & Quality Impact)
+             ======================================================== */}
+          {mode === "REVIEW" && (
+            <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
+              <div style={{ flex: 1, height: "100%", overflowY: "auto" }}>
+                <ReviewDiffPanel
+                  timelineVersionBefore={timeline.version}
+                  timelineVersionAfter={timeline.version + 1}
+                  diffState={isAiThinking ? "PREVIEWING" : "PROPOSED"}
+                  onAcceptAll={() => {
+                    setMode("CREATE");
+                  }}
+                  onRejectAll={() => {
+                    handleUndo();
+                    setMode("CREATE");
+                  }}
+                  onUndoAiChanges={() => {
+                    handleUndo();
+                    setMode("CREATE");
+                  }}
+                />
+              </div>
+
+              {/* Side Monitor for quick review inspection */}
+              <div style={{ width: "380px", borderLeft: "1px solid var(--border)", background: "var(--bg-dark-stage)", display: "flex", flexDirection: "column" }}>
+                <DualMonitor
+                  selectedAsset={selectedAsset}
+                  isPlaying={isPlaying}
+                  onTogglePlay={() => setIsPlaying(!isPlaying)}
                   currentFrame={currentFrame}
+                  totalFrames={630}
+                  fps={fps}
+                  aspectRatio={aspectRatio}
+                  onToggleAspectRatio={() => setAspectRatio((prev) => (prev === "16:9" ? "9:16" : "16:9"))}
                   onSeek={setCurrentFrame}
-                  selectedClipId={selectedClip?.id || null}
-                  onSelectClip={setSelectedClip}
-                  onSplitClip={handleSplitClip}
-                  activeTool={activeTool}
-                  setActiveTool={setActiveTool}
-                  isSnapping={isSnapping}
-                  setIsSnapping={setIsSnapping}
-                  isMagnetic={isMagnetic}
-                  setIsMagnetic={setIsMagnetic}
-                  zoomLevel={zoomLevel}
-                  setZoomLevel={setZoomLevel}
-                  highlightedClipIds={highlightedClipIds}
-                  inPoint={inPoint}
-                  outPoint={outPoint}
                 />
               </div>
             </div>
-          ) : (
-            <>
-              {/* Contextual Toolbar (50px) */}
-              <ContextToolbar
-                selectedClip={selectedClip}
-                onOpenSpeed={() => setRightTab("PROPERTIES")}
-                onOpenColor={() => setRightTab("PROPERTIES")}
-                onOpenReframe={() => setAspectRatio((prev) => (prev === "16:9" ? "9:16" : "16:9"))}
-                onAiAction={(act) => handleExecuteAiPrompt(act)}
-              />
+          )}
 
-              {/* Central Preview Stage */}
-              <DualMonitor
-                selectedAsset={selectedAsset}
-                isPlaying={isPlaying}
-                onTogglePlay={() => setIsPlaying(!isPlaying)}
-                currentFrame={currentFrame}
-                totalFrames={630}
-                fps={fps}
-                aspectRatio={aspectRatio}
-                onToggleAspectRatio={() => setAspectRatio((prev) => (prev === "16:9" ? "9:16" : "16:9"))}
-                activeClipTitle={selectedClip?.name}
-                activeLut={selectedClip?.effects.find((e) => e.pluginId.includes("lut"))?.parameters.lut as string}
-                onSeek={setCurrentFrame}
-                inPoint={inPoint}
-                outPoint={outPoint}
-                onSetInPoint={setInPoint}
-                onSetOutPoint={setOutPoint}
-              />
-
-              {/* Bottom Multi-Track Timeline (280px) */}
-              <MultiTrackTimeline
-                timeline={timeline}
-                currentFrame={currentFrame}
-                onSeek={setCurrentFrame}
-                selectedClipId={selectedClip?.id || null}
-                onSelectClip={setSelectedClip}
-                onSplitClip={handleSplitClip}
-                activeTool={activeTool}
-                setActiveTool={setActiveTool}
-                isSnapping={isSnapping}
-                setIsSnapping={setIsSnapping}
-                isMagnetic={isMagnetic}
-                setIsMagnetic={setIsMagnetic}
-                zoomLevel={zoomLevel}
-                setZoomLevel={setZoomLevel}
-                highlightedClipIds={highlightedClipIds}
-                inPoint={inPoint}
-                outPoint={outPoint}
-              />
-            </>
+          {/* ========================================================
+              MODE 3: EXPORT (Render modal & presets)
+             ======================================================== */}
+          {mode === "EXPORT" && (
+            <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: "40px" }}>
+              <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-lg)", padding: "32px", maxWidth: "600px", width: "100%", boxShadow: "var(--shadow-lg)", textAlign: "center" }}>
+                <h2 style={{ fontSize: "20px", fontWeight: 800, marginBottom: "8px" }}>Export & Delivery</h2>
+                <p style={{ color: "var(--text-secondary)", fontSize: "13px", marginBottom: "20px" }}>
+                  Export your timeline in full resolution with hardware-accelerated video & audio rendering.
+                </p>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "24px" }}>
+                  <button
+                    onClick={() => {
+                      setAspectRatio("9:16");
+                      setRenderModalOpen(true);
+                    }}
+                    style={{ padding: "16px", border: "1px solid var(--border)", borderRadius: "8px", background: "var(--bg-subtle)", cursor: "pointer", textAlign: "left" }}
+                  >
+                    <div style={{ fontWeight: 700, fontSize: "13px" }}>TikTok / Reels 9:16</div>
+                    <div style={{ fontSize: "11px", color: "var(--text-muted)" }}>1080x1920 • 30fps H.264</div>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setAspectRatio("16:9");
+                      setRenderModalOpen(true);
+                    }}
+                    style={{ padding: "16px", border: "1px solid var(--border)", borderRadius: "8px", background: "var(--bg-subtle)", cursor: "pointer", textAlign: "left" }}
+                  >
+                    <div style={{ fontWeight: 700, fontSize: "13px" }}>YouTube 4K 16:9</div>
+                    <div style={{ fontSize: "11px", color: "var(--text-muted)" }}>3840x2160 • 60fps ProRes / H.265</div>
+                  </button>
+                </div>
+                <button
+                  onClick={() => setRenderModalOpen(true)}
+                  style={{ background: "var(--accent)", color: "#FFFFFF", border: "none", borderRadius: "6px", padding: "10px 24px", fontSize: "13px", fontWeight: 700, cursor: "pointer" }}
+                >
+                  Configure & Start Render
+                </button>
+              </div>
+            </div>
           )}
         </main>
 
-        {/* Resizer Handle for Right Inspector Panel (Point #4) */}
-        <div
-          onMouseDown={handleRightResizeMouseDown}
-          style={{
-            width: "5px",
-            cursor: "col-resize",
-            background: isResizingRight ? "var(--accent)" : "transparent",
-            position: "relative",
-            zIndex: 15,
-            transition: "background 0.1s ease",
-          }}
-          title="Drag to resize Inspector panel (300px - 480px)"
-        />
-
-        {/* Right Inspector & AI Director Panel (Resizable 300px - 480px) */}
-        <aside className="right-inspector-panel" style={{ width: `${rightPanelWidth}px`, flexShrink: 0 }}>
-          {/* Tabs Header */}
-          <div className="inspector-tabs-header">
-            <button
-              onClick={() => setRightTab("PROPERTIES")}
-              className={`inspector-tab-item ${rightTab === "PROPERTIES" ? "inspector-tab-item-active" : ""}`}
-            >
-              <Sliders size={13} />
-              <span>Properties</span>
-            </button>
-
-            <button
-              onClick={() => setRightTab("AI_DIRECTOR")}
-              className={`inspector-tab-item ${rightTab === "AI_DIRECTOR" ? "inspector-tab-item-active" : ""}`}
-            >
-              <Sparkles size={13} />
-              <span>AI Director</span>
-            </button>
-
-            <button
-              onClick={() => setRightTab("REVIEW")}
-              className={`inspector-tab-item ${rightTab === "REVIEW" ? "inspector-tab-item-active" : ""}`}
-            >
-              <CheckCircle2 size={13} />
-              <span>Review Diff</span>
-            </button>
-          </div>
-
-          {/* Tab Content */}
-          <div style={{ flex: 1, overflow: "hidden" }}>
-            {rightTab === "PROPERTIES" ? (
-              <InspectorPanel
-                selectedClip={selectedClip}
-                selectedNode={selectedNode}
-                mode={mode}
-                onUpdateClipSpeed={(clipId, speed) => {
-                  if (!selectedClip) return;
-                  const next = historyRef.current.pushMutation({
-                    type: "TRIM_CLIP",
-                    trackId: "trk_v1_primary",
-                    clipId,
-                  });
-                  selectedClip.speed = speed;
-                  setTimeline({ ...next });
-                }}
-              />
-            ) : rightTab === "AI_DIRECTOR" ? (
-              <AgentCopilot
-                onExecutePrompt={handleExecuteAiPrompt}
-                isThinking={isAiThinking}
-                approvalModalOpen={approvalModalOpen}
-                approvalPrompt={executionState?.approvalPrompt}
-                onApprove={(notes) => handleApprovalResume("APPROVED", notes)}
-                onReject={(notes) => handleApprovalResume("REJECTED", notes)}
-                onCloseApproval={() => setApprovalModalOpen(false)}
-                onPreviewDiff={() => setRightTab("REVIEW")}
-                onApplyDiff={() => {
-                  setRightTab("PROPERTIES");
-                }}
-                activeRun={activeAgentRun}
-                selectedClip={selectedClip}
-                projectName={projectName}
-                openAiOnRun={openAiOnRun}
-                onToggleOpenAiOnRun={(val) => {
-                  setOpenAiOnRun(val);
-                  browserCache.set("pref_open_ai_on_run", val);
-                }}
-              />
-            ) : (
-              <ReviewDiffPanel
-                timelineVersionBefore={timeline.version}
-                timelineVersionAfter={timeline.version + 1}
-                diffState={isAiThinking ? "PREVIEWING" : "PROPOSED"}
-                onAcceptAll={() => {
-                  setRightTab("PROPERTIES");
-                }}
-                onRejectAll={() => {
-                  handleUndo();
-                  setRightTab("PROPERTIES");
-                }}
-                onUndoAiChanges={() => {
-                  handleUndo();
-                  setRightTab("PROPERTIES");
-                }}
-              />
-            )}
-          </div>
-        </aside>
+        {/* Pro Studio Mode Right Inspector Panel (Shown only when isProMode is enabled) */}
+        {isProMode && (
+          <aside className="right-inspector-panel" style={{ width: "360px", flexShrink: 0, borderLeft: "1px solid var(--border)", background: "var(--bg-surface)", overflowY: "auto" }}>
+            <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <span style={{ fontSize: "12px", fontWeight: 700, color: "var(--accent)" }}>PRO NLE CONTROLS</span>
+              <button
+                onClick={() => setIsProMode(false)}
+                style={{ background: "transparent", border: "none", color: "var(--text-muted)", fontSize: "11px", cursor: "pointer" }}
+              >
+                Close Pro Panel
+              </button>
+            </div>
+            <InspectorPanel
+              selectedClip={selectedClip}
+              selectedNode={selectedNode}
+              mode={mode}
+              onUpdateClipSpeed={(clipId, speed) => {
+                if (!selectedClip) return;
+                const next = historyRef.current.pushMutation({
+                  type: "TRIM_CLIP",
+                  trackId: "trk_v1_primary",
+                  clipId,
+                });
+                selectedClip.speed = speed;
+                setTimeline({ ...next });
+              }}
+            />
+          </aside>
+        )}
       </div>
+
+      {/* Workflow DAG Modal (Progressive Disclosure) */}
+      {showWorkflowModal && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0, 0, 0, 0.75)",
+            zIndex: 9999,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "24px",
+          }}
+        >
+          <div
+            style={{
+              width: "90vw",
+              height: "85vh",
+              background: "var(--bg-surface)",
+              borderRadius: "var(--radius-lg)",
+              border: "1px solid var(--border)",
+              display: "flex",
+              flexDirection: "column",
+              overflow: "hidden",
+              boxShadow: "var(--shadow-float)",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                padding: "12px 18px",
+                borderBottom: "1px solid var(--border)",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <Workflow size={16} style={{ color: "var(--accent)" }} />
+                <span style={{ fontSize: "14px", fontWeight: 700 }}>Technical Execution DAG</span>
+                <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>• Inspect nodes & dependencies</span>
+              </div>
+              <button
+                onClick={() => setShowWorkflowModal(false)}
+                style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--text-muted)" }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div style={{ flex: 1, overflow: "hidden" }}>
+              <VisualNodeGraph
+                graph={workflow}
+                executionState={executionState}
+                isRunning={isWorkflowRunning}
+                onRunWorkflow={async () => {}}
+                onResetWorkflow={() => setExecutionState(null)}
+                selectedNodeId={selectedNode?.id || null}
+                onSelectNode={setSelectedNode}
+                onOpenApproval={() => {}}
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Export & Master Render Modal */}
       <RenderModal
@@ -860,7 +695,7 @@ export default function StudioPage() {
         renderResult={renderResult}
       />
 
-      {/* System Diagnostics Modal (AI Router, CAC, GPU, Storage Vault) */}
+      {/* System Diagnostics Modal */}
       <SystemStatusModal
         isOpen={systemStatusOpen}
         onClose={() => setSystemStatusOpen(false)}
@@ -888,7 +723,17 @@ export default function StudioPage() {
       <CommandPalette
         isOpen={commandPaletteOpen}
         onClose={() => setCommandPaletteOpen(false)}
-        onSelectAction={handleCommandAction}
+        onSelectAction={(actionId) => {
+          if (actionId === "ai_cinematic") {
+            handleExecuteAiPrompt("Make this more cinematic with 3D LUT and ASL dynamic pacing.");
+          } else if (actionId === "ai_dead_air") {
+            handleExecuteAiPrompt("Cut dead air over 400 milliseconds and ripple downstream clips.");
+          } else if (actionId === "export_master") {
+            setRenderModalOpen(true);
+          } else if (actionId === "open_settings") {
+            setSettingsModalOpen(true);
+          }
+        }}
       />
     </div>
   );
