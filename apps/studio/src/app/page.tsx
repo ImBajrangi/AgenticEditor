@@ -5,15 +5,13 @@ import { Header, WorkspaceMode } from "@/components/layout/Header";
 import { ToolRail, ToolRailSection } from "@/components/layout/ToolRail";
 import { CommandPalette } from "@/components/layout/CommandPalette";
 import { SystemStatusModal } from "@/components/layout/SystemStatusModal";
-import { DualMonitor } from "@/components/monitors/DualMonitor";
-import { SemanticStoryTimeline } from "@/components/timeline/SemanticStoryTimeline";
+import { CreateScreen } from "@/components/create/CreateScreen";
+import { FinishedVideoFirstStage } from "@/components/player/FinishedVideoFirstStage";
 import { MultiTrackTimeline, TimelineEditTool } from "@/components/timeline/MultiTrackTimeline";
-import { AiDirectorCenterPanel } from "@/components/agents/AiDirectorCenterPanel";
 import { ReviewDiffPanel } from "@/components/agents/ReviewDiffPanel";
 import { InspectorPanel } from "@/components/inspector/InspectorPanel";
 import { MediaBin } from "@/components/assets/MediaBin";
 import { VisualNodeGraph } from "@/components/graph/VisualNodeGraph";
-import { AgentCopilot } from "@/components/agents/AgentCopilot";
 import { RenderModal } from "@/components/render/RenderModal";
 import { SettingsModal } from "@/components/settings/SettingsModal";
 import {
@@ -34,9 +32,13 @@ import {
 } from "@aetheredit/workflow-engine";
 import { AgentRun } from "@/packages/agent-runtime/src/types";
 import { browserCache } from "@/lib/cache/browser-cache";
-import { X, Workflow, Sparkles, FolderKanban } from "lucide-react";
+import { X, Workflow, Sparkles, FolderKanban, Plus } from "lucide-react";
 
 export default function StudioPage() {
+  // Core Screen State: Screen 1 (Create/Ingest) vs Screen 2 (Finished Video First)
+  const [hasCreatedVideo, setHasCreatedVideo] = useState<boolean>(true);
+  const [isGeneratingFirstCut, setIsGeneratingFirstCut] = useState<boolean>(false);
+
   // 1. Studio Mode: 3 Primary Modes [CREATE | REVIEW | EXPORT]
   const [mode, setMode] = useState<WorkspaceMode>("CREATE");
   const [isProMode, setIsProMode] = useState<boolean>(false);
@@ -66,10 +68,8 @@ export default function StudioPage() {
   const [canRedo, setCanRedo] = useState(false);
 
   // 3. Playhead & Playback
-  const [currentFrame, setCurrentFrame] = useState(0);
+  const [currentFrame, setCurrentFrame] = useState(240); // 00:08.00 preview point
   const [isPlaying, setIsPlaying] = useState(false);
-  const [inPoint, setInPoint] = useState<number | null>(null);
-  const [outPoint, setOutPoint] = useState<number | null>(null);
   const fps = 30;
 
   // 4. Selections
@@ -131,19 +131,18 @@ export default function StudioPage() {
       interval = setInterval(() => {
         setCurrentFrame((prev) => {
           const maxFrames = 630;
-          const endLimit = outPoint !== null ? outPoint : maxFrames;
-          if (prev >= endLimit) {
+          if (prev >= maxFrames) {
             setIsPlaying(false);
-            return inPoint !== null ? inPoint : 0;
+            return 0;
           }
           return prev + 1;
         });
       }, 1000 / fps);
     }
     return () => clearInterval(interval);
-  }, [isPlaying, fps, inPoint, outPoint]);
+  }, [isPlaying, fps]);
 
-  // Global Keyboard Shortcuts (J-K-L, Space, ⌘Z, ⌘K, I/O)
+  // Global Keyboard Shortcuts (Space, ⌘Z, ⌘K, J-K-L)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
@@ -170,7 +169,7 @@ export default function StudioPage() {
       else if ((e.key === "j" || e.key === "J") && !e.metaKey && !e.ctrlKey) {
         e.preventDefault();
         setIsPlaying(false);
-        setCurrentFrame((prev) => Math.max(0, prev - (e.shiftKey ? 15 : 5)));
+        setCurrentFrame((prev) => Math.max(0, prev - 15));
       } else if ((e.key === "k" || e.key === "K") && !e.metaKey && !e.ctrlKey) {
         e.preventDefault();
         setIsPlaying(false);
@@ -178,29 +177,13 @@ export default function StudioPage() {
         e.preventDefault();
         setIsPlaying(true);
       }
-      // Arrow Keys: Frame by Frame Nudge
-      else if (e.key === "ArrowLeft") {
-        e.preventDefault();
-        setCurrentFrame((prev) => Math.max(0, prev - (e.shiftKey ? 10 : 1)));
-      } else if (e.key === "ArrowRight") {
-        e.preventDefault();
-        setCurrentFrame((prev) => Math.min(630, prev + (e.shiftKey ? 10 : 1)));
-      }
-      // In & Out Mark Points (I / O)
-      else if ((e.key === "i" || e.key === "I") && !e.metaKey && !e.ctrlKey) {
-        e.preventDefault();
-        setInPoint(currentFrame);
-      } else if ((e.key === "o" || e.key === "O") && !e.metaKey && !e.ctrlKey) {
-        e.preventDefault();
-        setOutPoint(currentFrame);
-      }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [canUndo, canRedo, currentFrame, inPoint, outPoint]);
+  }, [canUndo, canRedo, currentFrame]);
 
-  // Undo / Redo Handlers (Single ⌘Z reverts entire AI edit transaction!)
+  // Undo / Redo Handlers
   const handleUndo = () => {
     const prev = historyRef.current.undo();
     if (prev) {
@@ -219,36 +202,73 @@ export default function StudioPage() {
     }
   };
 
-  // Direct AI Execution
-  const handleExecuteAiPrompt = async (promptText: string) => {
-    setIsAiThinking(true);
+  // Screen 1: Start Creation -> AI analyzes footage and builds finished edit
+  const handleStartCreation = async (promptText: string, assets: MediaAsset[], formatRatio: "16:9" | "9:16") => {
+    setIsGeneratingFirstCut(true);
+    setAspectRatio(formatRatio);
+
     try {
-      const res = await fetch("/api/agents", {
+      const res = await fetch("/api/ai", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           prompt: promptText,
           timeline,
-          assets: SAMPLE_ASSETS,
-          modelPolicy,
+          policy: modelPolicy,
         }),
       });
 
       const data = await res.json();
-      if (data.success && data.run) {
-        setActiveAgentRun(data.run);
-        if (data.run.mutations && data.run.mutations.length > 0) {
-          let updated = timeline;
-          for (const mut of data.run.mutations) {
-            updated = historyRef.current.pushMutation(mut);
-          }
-          setTimeline(updated);
-          browserCache.set("active_timeline", updated);
-          updateHistoryState();
+      if (data.success && data.proposedMutations) {
+        let updated = timeline;
+        for (const mut of data.proposedMutations) {
+          updated = historyRef.current.pushMutation(mut);
         }
+        setTimeline(updated);
+        browserCache.set("active_timeline", updated);
+        updateHistoryState();
+      }
+
+      // Transition smoothly to Screen 2: Finished Video First
+      setTimeout(() => {
+        setIsGeneratingFirstCut(false);
+        setHasCreatedVideo(true);
+        setCurrentFrame(0);
+        setIsPlaying(true);
+      }, 1200);
+    } catch (err) {
+      console.error("Creation error:", err);
+      setIsGeneratingFirstCut(false);
+      setHasCreatedVideo(true);
+    }
+  };
+
+  // Screen 2: Natural-Language Timestamp-Based Revision Loop (Points #7, #8, #11)
+  const handleNaturalRevision = async (instruction: string, timestampSeconds: number, targetClip?: TimelineClip | null) => {
+    setIsAiThinking(true);
+    try {
+      const res = await fetch("/api/ai", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt: `${instruction} [Target timestamp: ${timestampSeconds.toFixed(2)}s, Clip: ${targetClip?.name || "current"}]`,
+          timeline,
+          policy: modelPolicy,
+        }),
+      });
+
+      const data = await res.json();
+      if (data.success && data.proposedMutations) {
+        let updated = timeline;
+        for (const mut of data.proposedMutations) {
+          updated = historyRef.current.pushMutation(mut);
+        }
+        setTimeline(updated);
+        browserCache.set("active_timeline", updated);
+        updateHistoryState();
       }
     } catch (err) {
-      console.error("AI Direct error:", err);
+      console.error("Revision error:", err);
     } finally {
       setIsAiThinking(false);
     }
@@ -295,7 +315,7 @@ export default function StudioPage() {
 
   return (
     <div className="studio-root">
-      {/* 1. Clean Top Bar (64px) with 3 Primary Modes [Create | Review | Export] + Pro Toggle */}
+      {/* 1. Header (60px) with 3 Primary Modes [Create | Review | Export] + Pro Toggle */}
       <Header
         mode={mode}
         setMode={setMode}
@@ -326,7 +346,7 @@ export default function StudioPage() {
           onToggleProMode={() => setIsProMode(!isProMode)}
         />
 
-        {/* Left Contextual Drawer (320px) */}
+        {/* Left Contextual Drawer */}
         {activeRailSection === "ASSETS" && (
           <div className="left-drawer-panel" style={{ width: "320px", flexShrink: 0, borderRight: "1px solid var(--border)" }}>
             <MediaBin
@@ -351,164 +371,112 @@ export default function StudioPage() {
                 <X size={14} />
               </button>
             </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: "10px", fontSize: "12px" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: "12px", fontSize: "12px" }}>
               <div>
                 <label style={{ display: "block", color: "var(--text-secondary)", marginBottom: "4px" }}>Project Name</label>
                 <input
                   type="text"
                   value={projectName}
                   onChange={(e) => setProjectName(e.target.value)}
-                  style={{ width: "100%", padding: "6px 8px", border: "1px solid var(--border)", borderRadius: "4px" }}
+                  style={{ width: "100%", padding: "6px 8px", border: "1px solid var(--border)", borderRadius: "4px", background: "#0B0D13", color: "#FFFFFF" }}
                 />
               </div>
-              <div>
-                <label style={{ display: "block", color: "var(--text-secondary)", marginBottom: "4px" }}>Target Platform & Format</label>
-                <div style={{ display: "flex", gap: "6px" }}>
-                  <button
-                    onClick={() => setAspectRatio("16:9")}
-                    style={{ flex: 1, padding: "6px", border: aspectRatio === "16:9" ? "1px solid var(--accent)" : "1px solid var(--border)", background: aspectRatio === "16:9" ? "var(--accent-soft)" : "var(--bg-surface)", borderRadius: "4px", fontWeight: 600 }}
-                  >
-                    16:9 Cinema / YT
-                  </button>
-                  <button
-                    onClick={() => setAspectRatio("9:16")}
-                    style={{ flex: 1, padding: "6px", border: aspectRatio === "9:16" ? "1px solid var(--accent)" : "1px solid var(--border)", background: aspectRatio === "9:16" ? "var(--accent-soft)" : "var(--bg-surface)", borderRadius: "4px", fontWeight: 600 }}
-                  >
-                    9:16 TikTok / Reels
-                  </button>
-                </div>
-              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setHasCreatedVideo(false);
+                  setActiveRailSection(null);
+                }}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "6px",
+                  background: "rgba(99, 102, 241, 0.2)",
+                  border: "1px solid rgba(99, 102, 241, 0.4)",
+                  color: "#A5B4FC",
+                  padding: "8px",
+                  borderRadius: "6px",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
+              >
+                <Plus size={13} />
+                <span>Create New Video Project</span>
+              </button>
             </div>
           </div>
         )}
 
-        {activeRailSection === "AI" && (
-          <div className="left-drawer-panel" style={{ width: "360px", flexShrink: 0, borderRight: "1px solid var(--border)" }}>
-            <AgentCopilot
-              onExecutePrompt={handleExecuteAiPrompt}
-              isThinking={isAiThinking}
-              approvalModalOpen={false}
-              onApprove={() => {}}
-              onReject={() => {}}
-              onCloseApproval={() => {}}
-              activeRun={activeAgentRun}
-              selectedClip={selectedClip}
-              projectName={projectName}
-            />
-          </div>
-        )}
-
-        {/* Main Center Work Area */}
+        {/* Main Center Stage */}
         <main style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-app)" }}>
-          {/* ========================================================
-              MODE 1: CREATE (AI Director First, Monitor, Timeline)
-             ======================================================== */}
+          {/* MODE 1: CREATE WORKSPACE */}
           {mode === "CREATE" && (
             <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-              {/* Upper Section: 60% AI Director + 25-40% Program Monitor */}
-              <div style={{ flex: "1 1 65%", display: "flex", overflow: "hidden", minHeight: "340px" }}>
-                {/* Left/Center: AI Director Flagship Centerpiece (60%) */}
-                <div style={{ flex: "0 0 60%", height: "100%", overflowY: "auto" }}>
-                  <AiDirectorCenterPanel
-                    onDirectPrompt={handleExecuteAiPrompt}
-                    isThinking={isAiThinking}
-                    activeRun={activeAgentRun}
-                    onOpenWorkflowGraph={() => setShowWorkflowModal(true)}
-                    onOpenReviewDiff={() => setMode("REVIEW")}
+              {!hasCreatedVideo ? (
+                /* SCREEN 1: Frictionless Ingest & Goal ("Drop your videos here" + "What should I make?") */
+                <CreateScreen
+                  onStartCreation={handleStartCreation}
+                  isProcessing={isGeneratingFirstCut}
+                />
+              ) : (
+                /* SCREEN 2: Finished Video First with Scrubbable Timeline & Timestamp Revision Loop (The Core Experience!) */
+                <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+                  <FinishedVideoFirstStage
+                    timeline={timeline}
+                    currentFrame={currentFrame}
+                    totalFrames={630}
+                    fps={fps}
+                    isPlaying={isPlaying}
+                    onTogglePlay={() => setIsPlaying(!isPlaying)}
+                    onSeek={setCurrentFrame}
                     aspectRatio={aspectRatio}
                     onToggleAspectRatio={() => setAspectRatio((prev) => (prev === "16:9" ? "9:16" : "16:9"))}
-                  />
-                </div>
-
-                {/* Right: Program Monitor (40%) */}
-                <div style={{ flex: "0 0 40%", height: "100%", display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-dark-stage)" }}>
-                  <DualMonitor
                     selectedAsset={selectedAsset}
-                    isPlaying={isPlaying}
-                    onTogglePlay={() => setIsPlaying(!isPlaying)}
-                    currentFrame={currentFrame}
-                    totalFrames={630}
-                    fps={fps}
-                    aspectRatio={aspectRatio}
-                    onToggleAspectRatio={() => setAspectRatio((prev) => (prev === "16:9" ? "9:16" : "16:9"))}
-                    activeClipTitle={selectedClip?.name}
-                    activeLut={selectedClip?.effects.find((e) => e.pluginId.includes("lut"))?.parameters.lut as string}
-                    onSeek={setCurrentFrame}
-                    inPoint={inPoint}
-                    outPoint={outPoint}
-                    onSetInPoint={setInPoint}
-                    onSetOutPoint={setOutPoint}
+                    onNaturalRevision={handleNaturalRevision}
+                    isProcessingRevision={isAiThinking}
+                    onToggleProMode={() => setIsProMode(!isProMode)}
+                    onOpenExport={() => setRenderModalOpen(true)}
+                    onOpenSettings={() => setSettingsModalOpen(true)}
                   />
-                </div>
-              </div>
 
-              {/* Lower Section: 15-35% Timeline */}
-              <div style={{ flex: "0 0 35%", minHeight: "220px", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-                {isProMode ? (
-                  /* Pro Multi-Track Timeline */
-                  <MultiTrackTimeline
-                    timeline={timeline}
-                    currentFrame={currentFrame}
-                    onSeek={setCurrentFrame}
-                    selectedClipId={selectedClip?.id || null}
-                    onSelectClip={setSelectedClip}
-                    onSplitClip={(clipId, frame) => {
-                      const next = historyRef.current.pushMutation({
-                        type: "SPLIT_CLIP",
-                        trackId: "trk_v1_primary",
-                        clipId,
-                        splitFrame: frame,
-                      });
-                      setTimeline(next);
-                      updateHistoryState();
-                    }}
-                    activeTool={activeTool}
-                    setActiveTool={setActiveTool}
-                    isSnapping={isSnapping}
-                    setIsSnapping={setIsSnapping}
-                    isMagnetic={isMagnetic}
-                    setIsMagnetic={setIsMagnetic}
-                    zoomLevel={zoomLevel}
-                    setZoomLevel={setZoomLevel}
-                    inPoint={inPoint}
-                    outPoint={outPoint}
-                  />
-                ) : (
-                  /* Default AI Semantic Story Timeline */
-                  <SemanticStoryTimeline
-                    timeline={timeline}
-                    currentFrame={currentFrame}
-                    totalFrames={630}
-                    fps={fps}
-                    isPlaying={isPlaying}
-                    onTogglePlay={() => setIsPlaying(!isPlaying)}
-                    onSeek={setCurrentFrame}
-                    onSelectClip={setSelectedClip}
-                    selectedClip={selectedClip}
-                    onToggleProMode={() => setIsProMode(true)}
-                    onDirectAction={(action, data) => {
-                      if (action === "IMPROVE_ACT") {
-                        handleExecuteAiPrompt(`Improve pacing and cut transitions for ${data.name} section.`);
-                      } else if (action === "SHORTEN_CLIP") {
-                        handleExecuteAiPrompt(`Shorten clip "${data.name}" by 15% and tighten pacing.`);
-                      } else if (action === "REFRAME_CLIP") {
-                        setAspectRatio("9:16");
-                        handleExecuteAiPrompt(`Auto-reframe clip "${data.name}" to 9:16 vertical tracking.`);
-                      } else if (action === "MATCH_COLOR") {
-                        handleExecuteAiPrompt(`Match cinematic Kodak color grade for clip "${data.name}".`);
-                      } else if (action === "REPLACE_CLIP") {
-                        handleExecuteAiPrompt(`Find and replace clip "${data.name}" with highest quality alternate angle.`);
-                      }
-                    }}
-                  />
-                )}
-              </div>
+                  {/* Pro Studio Multi-Track Panel (Revealed only when Pro Studio is toggled on) */}
+                  {isProMode && (
+                    <div style={{ height: "240px", borderTop: "1px solid var(--border)", display: "flex", flexDirection: "column" }}>
+                      <MultiTrackTimeline
+                        timeline={timeline}
+                        currentFrame={currentFrame}
+                        onSeek={setCurrentFrame}
+                        selectedClipId={selectedClip?.id || null}
+                        onSelectClip={setSelectedClip}
+                        onSplitClip={(clipId, frame) => {
+                          const next = historyRef.current.pushMutation({
+                            type: "SPLIT_CLIP",
+                            trackId: "trk_v1_primary",
+                            clipId,
+                            splitFrame: frame,
+                          });
+                          setTimeline(next);
+                          updateHistoryState();
+                        }}
+                        activeTool={activeTool}
+                        setActiveTool={setActiveTool}
+                        isSnapping={isSnapping}
+                        setIsSnapping={setIsSnapping}
+                        isMagnetic={isMagnetic}
+                        setIsMagnetic={setIsMagnetic}
+                        zoomLevel={zoomLevel}
+                        setZoomLevel={setZoomLevel}
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
-          {/* ========================================================
-              MODE 2: REVIEW (Prominent Review Diff & Quality Impact)
-             ======================================================== */}
+          {/* MODE 2: REVIEW (Review Diff & Quality Impact Dashboard) */}
           {mode === "REVIEW" && (
             <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
               <div style={{ flex: 1, height: "100%", overflowY: "auto" }}>
@@ -529,33 +497,16 @@ export default function StudioPage() {
                   }}
                 />
               </div>
-
-              {/* Side Monitor for quick review inspection */}
-              <div style={{ width: "380px", borderLeft: "1px solid var(--border)", background: "var(--bg-dark-stage)", display: "flex", flexDirection: "column" }}>
-                <DualMonitor
-                  selectedAsset={selectedAsset}
-                  isPlaying={isPlaying}
-                  onTogglePlay={() => setIsPlaying(!isPlaying)}
-                  currentFrame={currentFrame}
-                  totalFrames={630}
-                  fps={fps}
-                  aspectRatio={aspectRatio}
-                  onToggleAspectRatio={() => setAspectRatio((prev) => (prev === "16:9" ? "9:16" : "16:9"))}
-                  onSeek={setCurrentFrame}
-                />
-              </div>
             </div>
           )}
 
-          {/* ========================================================
-              MODE 3: EXPORT (Render modal & presets)
-             ======================================================== */}
+          {/* MODE 3: EXPORT */}
           {mode === "EXPORT" && (
             <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: "40px" }}>
-              <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-lg)", padding: "32px", maxWidth: "600px", width: "100%", boxShadow: "var(--shadow-lg)", textAlign: "center" }}>
-                <h2 style={{ fontSize: "20px", fontWeight: 800, marginBottom: "8px" }}>Export & Delivery</h2>
+              <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-lg)", padding: "32px", maxWidth: "600px", width: "100%", textAlign: "center" }}>
+                <h2 style={{ fontSize: "20px", fontWeight: 800, marginBottom: "8px" }}>Export Master Delivery</h2>
                 <p style={{ color: "var(--text-secondary)", fontSize: "13px", marginBottom: "20px" }}>
-                  Export your timeline in full resolution with hardware-accelerated video & audio rendering.
+                  Export with full ProRes / H.264 hardware acceleration directly to DaVinci Resolve or local MP4.
                 </p>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "24px" }}>
                   <button
@@ -576,7 +527,7 @@ export default function StudioPage() {
                     style={{ padding: "16px", border: "1px solid var(--border)", borderRadius: "8px", background: "var(--bg-subtle)", cursor: "pointer", textAlign: "left" }}
                   >
                     <div style={{ fontWeight: 700, fontSize: "13px" }}>YouTube 4K 16:9</div>
-                    <div style={{ fontSize: "11px", color: "var(--text-muted)" }}>3840x2160 • 60fps ProRes / H.265</div>
+                    <div style={{ fontSize: "11px", color: "var(--text-muted)" }}>3840x2160 • 60fps ProRes 422</div>
                   </button>
                 </div>
                 <button
@@ -590,11 +541,11 @@ export default function StudioPage() {
           )}
         </main>
 
-        {/* Pro Studio Mode Right Inspector Panel (Shown only when isProMode is enabled) */}
+        {/* Pro Studio Mode Right Inspector Panel (Color Wheels, Curves, Mixer) */}
         {isProMode && (
           <aside className="right-inspector-panel" style={{ width: "360px", flexShrink: 0, borderLeft: "1px solid var(--border)", background: "var(--bg-surface)", overflowY: "auto" }}>
             <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-              <span style={{ fontSize: "12px", fontWeight: 700, color: "var(--accent)" }}>PRO NLE CONTROLS</span>
+              <span style={{ fontSize: "12px", fontWeight: 700, color: "var(--accent)" }}>RESOLVE NLE CONTROLS</span>
               <button
                 onClick={() => setIsProMode(false)}
                 style={{ background: "transparent", border: "none", color: "var(--text-muted)", fontSize: "11px", cursor: "pointer" }}
@@ -621,55 +572,19 @@ export default function StudioPage() {
         )}
       </div>
 
-      {/* Workflow DAG Modal (Progressive Disclosure) */}
+      {/* Workflow DAG Modal */}
       {showWorkflowModal && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0, 0, 0, 0.75)",
-            zIndex: 9999,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: "24px",
-          }}
-        >
-          <div
-            style={{
-              width: "90vw",
-              height: "85vh",
-              background: "var(--bg-surface)",
-              borderRadius: "var(--radius-lg)",
-              border: "1px solid var(--border)",
-              display: "flex",
-              flexDirection: "column",
-              overflow: "hidden",
-              boxShadow: "var(--shadow-float)",
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                padding: "12px 18px",
-                borderBottom: "1px solid var(--border)",
-              }}
-            >
+        <div className="modal-overlay-backdrop">
+          <div className="modal-dialog-card" style={{ maxWidth: "90vw", height: "85vh" }}>
+            <div className="modal-header-bar">
               <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                 <Workflow size={16} style={{ color: "var(--accent)" }} />
-                <span style={{ fontSize: "14px", fontWeight: 700 }}>Technical Execution DAG</span>
-                <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>• Inspect nodes & dependencies</span>
+                <span>Technical Execution DAG</span>
               </div>
-              <button
-                onClick={() => setShowWorkflowModal(false)}
-                style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--text-muted)" }}
-              >
+              <button onClick={() => setShowWorkflowModal(false)} style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--text-muted)" }}>
                 <X size={18} />
               </button>
             </div>
-
             <div style={{ flex: 1, overflow: "hidden" }}>
               <VisualNodeGraph
                 graph={workflow}
@@ -724,11 +639,7 @@ export default function StudioPage() {
         isOpen={commandPaletteOpen}
         onClose={() => setCommandPaletteOpen(false)}
         onSelectAction={(actionId) => {
-          if (actionId === "ai_cinematic") {
-            handleExecuteAiPrompt("Make this more cinematic with 3D LUT and ASL dynamic pacing.");
-          } else if (actionId === "ai_dead_air") {
-            handleExecuteAiPrompt("Cut dead air over 400 milliseconds and ripple downstream clips.");
-          } else if (actionId === "export_master") {
+          if (actionId === "export_master") {
             setRenderModalOpen(true);
           } else if (actionId === "open_settings") {
             setSettingsModalOpen(true);
