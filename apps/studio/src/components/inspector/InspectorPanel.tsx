@@ -19,9 +19,13 @@ import {
   SplitSquareVertical,
   SlidersHorizontal,
   CircleDot,
+  Trash2,
+  Play,
 } from "lucide-react";
-import { TimelineClip } from "@aetheredit/timeline-ir";
+import { TimelineClip, TimelineIR } from "@aetheredit/timeline-ir";
 import { WorkflowNode } from "@aetheredit/workflow-engine";
+import { AIDirectorPanel } from "../agents/AIDirectorPanel";
+import { MediaAsset } from "@/lib/sample-data";
 
 export interface LutMetadata {
   name: string;
@@ -78,6 +82,22 @@ interface InspectorPanelProps {
   mode: "CREATE" | "REVIEW" | "EXPORT" | "EDIT" | "WORKFLOW";
   onUpdateClipSpeed?: (clipId: string, speed: number) => void;
   onUpdateClipVolume?: (clipId: string, volumeDb: number) => void;
+  onDirectPrompt?: (prompt: string, customScript?: any) => void;
+  isThinking?: boolean;
+  hasPendingChanges?: boolean;
+  onReviewChanges?: () => void;
+  onApproveChanges?: () => void;
+  onRejectChanges?: () => void;
+  timeline?: TimelineIR;
+  timelineBefore?: TimelineIR | null;
+  activeAiRun?: any;
+  assets?: MediaAsset[];
+  creativeBrief?: string;
+  onUpdateCreativeBrief?: (brief: string) => void;
+  onUpdateNode?: (node: WorkflowNode) => void;
+  onDeleteNode?: (nodeId: string) => void;
+  onExecuteNode?: (nodeId: string) => void;
+  currentFrame?: number;
 }
 
 export const InspectorPanel: React.FC<InspectorPanelProps> = ({
@@ -85,7 +105,24 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
   selectedNode,
   mode,
   onUpdateClipSpeed,
+  onDirectPrompt,
+  isThinking = false,
+  hasPendingChanges = false,
+  onReviewChanges,
+  onApproveChanges,
+  onRejectChanges,
+  timeline,
+  timelineBefore,
+  activeAiRun,
+  assets = [],
+  creativeBrief = "Premium cinematic travel film with warm filmic tone",
+  onUpdateCreativeBrief,
+  onUpdateNode,
+  onDeleteNode,
+  onExecuteNode,
+  currentFrame = 0,
 }) => {
+  const [activeTab, setActiveTab] = useState<"PROPERTIES" | "AI_DIRECTOR">("PROPERTIES");
   // Accordion Section States
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
     transform: true,
@@ -176,33 +213,310 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
   const currentLut = LUT_PRESETS[selectedLutIndex];
 
   if (mode === "WORKFLOW" && selectedNode) {
+    const handleParamChange = (key: string, val: unknown) => {
+      if (onUpdateNode) {
+        onUpdateNode({
+          ...selectedNode,
+          parameters: {
+            ...selectedNode.parameters,
+            [key]: val,
+          },
+        });
+      }
+    };
+
     return (
       <div style={{ display: "flex", flexDirection: "column", height: "100%", background: "var(--bg-surface)" }}>
-        <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: "6px" }}>
-          <Settings2 size={14} style={{ color: "var(--accent)" }} />
-          <span style={{ fontSize: "13px", fontWeight: 700, color: "var(--text-primary)" }}>
-            Node Configuration
-          </span>
+        {/* Node Configuration Header */}
+        <div
+          style={{
+            padding: "12px 16px",
+            borderBottom: "1px solid var(--border)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+            <Settings2 size={14} style={{ color: "var(--accent)" }} />
+            <span style={{ fontSize: "13px", fontWeight: 700, color: "var(--text-primary)" }}>
+              Node Configuration
+            </span>
+          </div>
+
+          <button
+            onClick={() => onDeleteNode && onDeleteNode(selectedNode.id)}
+            title="Delete Node (⌫)"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "4px",
+              background: "transparent",
+              border: "1px solid var(--border)",
+              color: "#EF4444",
+              borderRadius: "var(--radius-sm)",
+              padding: "4px 8px",
+              fontSize: "11px",
+              fontWeight: 600,
+              cursor: "pointer",
+            }}
+          >
+            <Trash2 size={11} />
+            <span>Delete</span>
+          </button>
         </div>
-        <div style={{ padding: "14px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "10px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px" }}>
-            <span style={{ color: "var(--text-secondary)" }}>Node ID</span>
-            <span style={{ fontWeight: 600, color: "var(--text-primary)" }}>{selectedNode.id}</span>
+
+        <div style={{ padding: "14px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "12px" }}>
+          {/* Node Label (Editable) */}
+          <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+            <span style={{ fontSize: "11px", fontWeight: 600, color: "var(--text-secondary)" }}>Node Title</span>
+            <input
+              type="text"
+              value={selectedNode.label}
+              onChange={(e) => {
+                if (onUpdateNode) {
+                  onUpdateNode({ ...selectedNode, label: e.target.value });
+                }
+              }}
+              style={{
+                width: "100%",
+                padding: "6px 10px",
+                borderRadius: "var(--radius-sm)",
+                border: "1px solid var(--border)",
+                fontSize: "12px",
+                fontWeight: 600,
+                color: "var(--text-primary)",
+                background: "var(--bg-subtle)",
+                outline: "none",
+              }}
+            />
           </div>
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px" }}>
-            <span style={{ color: "var(--text-secondary)" }}>Category</span>
-            <span style={{ fontWeight: 600, color: "var(--accent)" }}>{selectedNode.category}</span>
+
+          {/* Node Metadata Badges */}
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: "11px", background: "var(--bg-subtle)", padding: "6px 10px", borderRadius: "var(--radius-sm)" }}>
+            <span style={{ color: "var(--text-secondary)" }}>Category: <strong style={{ color: "var(--accent)" }}>{selectedNode.category}</strong></span>
+            <span style={{ color: "var(--text-muted)", fontFamily: "monospace" }}>{selectedNode.type}</span>
           </div>
-          <div style={{ height: "1px", background: "var(--border)", margin: "4px 0" }} />
+
+          <div style={{ height: "1px", background: "var(--border)", margin: "2px 0" }} />
+
+          {/* Type-Specific Interactive Parameters */}
           <span style={{ fontSize: "11px", fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase" }}>
-            Node Parameters
+            Interactive Parameters
           </span>
+
+          {/* 1. CREATIVE_COLOR_GRADE */}
+          {selectedNode.type === "CREATIVE_COLOR_GRADE" && (
+            <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                <span style={{ fontSize: "11px", color: "var(--text-secondary)" }}>3D LUT Profile</span>
+                <select
+                  value={(selectedNode.parameters.lut as string) || "Warm_Filmic_5207.cube"}
+                  onChange={(e) => handleParamChange("lut", e.target.value)}
+                  style={{
+                    padding: "6px 8px",
+                    borderRadius: "var(--radius-sm)",
+                    border: "1px solid var(--border)",
+                    fontSize: "12px",
+                    background: "var(--bg-subtle)",
+                    color: "var(--text-primary)",
+                    outline: "none",
+                  }}
+                >
+                  <option value="Warm_Filmic_5207.cube">Warm Kodak 5207 Filmic</option>
+                  <option value="Rec709_Clean.cube">Clean Rec.709 Commercial</option>
+                  <option value="Teal_Orange.cube">High Contrast Teal & Orange</option>
+                  <option value="Monochrome_High_Contrast.cube">B&W Silver Halide Noir</option>
+                </select>
+              </div>
+
+              <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "11px" }}>
+                  <span style={{ color: "var(--text-secondary)" }}>LUT Intensity</span>
+                  <span style={{ fontWeight: 600 }}>{Math.round(((selectedNode.parameters.intensity as number) ?? 0.85) * 100)}%</span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.05"
+                  value={((selectedNode.parameters.intensity as number) ?? 0.85)}
+                  onChange={(e) => handleParamChange("intensity", parseFloat(e.target.value))}
+                  style={{ width: "100%", accentColor: "var(--accent)" }}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* 2. ANALYSIS_SILENCE_DETECTION */}
+          {selectedNode.type === "ANALYSIS_SILENCE_DETECTION" && (
+            <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "11px" }}>
+                  <span style={{ color: "var(--text-secondary)" }}>Silence Noise Floor Threshold</span>
+                  <span style={{ fontWeight: 600 }}>{((selectedNode.parameters.thresholdDb as number) ?? -30)} dB</span>
+                </div>
+                <input
+                  type="range"
+                  min="-45"
+                  max="-15"
+                  step="1"
+                  value={((selectedNode.parameters.thresholdDb as number) ?? -30)}
+                  onChange={(e) => handleParamChange("thresholdDb", parseInt(e.target.value, 10))}
+                  style={{ width: "100%", accentColor: "var(--accent)" }}
+                />
+              </div>
+
+              <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "11px" }}>
+                  <span style={{ color: "var(--text-secondary)" }}>Minimum Dead Air Duration</span>
+                  <span style={{ fontWeight: 600 }}>{((selectedNode.parameters.minDurationMs as number) ?? 400)} ms</span>
+                </div>
+                <input
+                  type="range"
+                  min="150"
+                  max="1200"
+                  step="50"
+                  value={((selectedNode.parameters.minDurationMs as number) ?? 400)}
+                  onChange={(e) => handleParamChange("minDurationMs", parseInt(e.target.value, 10))}
+                  style={{ width: "100%", accentColor: "var(--accent)" }}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* 3. AI_AGENT_STORY */}
+          {selectedNode.type === "AI_AGENT_STORY" && (
+            <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                <span style={{ fontSize: "11px", color: "var(--text-secondary)" }}>Narrative Tone</span>
+                <select
+                  value={(selectedNode.parameters.tone as string) || "Mysterious to Epic Peak"}
+                  onChange={(e) => handleParamChange("tone", e.target.value)}
+                  style={{
+                    padding: "6px 8px",
+                    borderRadius: "var(--radius-sm)",
+                    border: "1px solid var(--border)",
+                    fontSize: "12px",
+                    background: "var(--bg-subtle)",
+                    color: "var(--text-primary)",
+                    outline: "none",
+                  }}
+                >
+                  <option value="Mysterious to Epic Peak">Mysterious to Epic Peak</option>
+                  <option value="Fast-Paced Action">Fast-Paced High Retention</option>
+                  <option value="Emotional Documentary">Emotional Documentary</option>
+                  <option value="Cinematic Minimalist">Cinematic Minimalist</option>
+                </select>
+              </div>
+
+              <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                <span style={{ fontSize: "11px", color: "var(--text-secondary)" }}>Target Video Duration</span>
+                <select
+                  value={String(selectedNode.parameters.targetDurationSec || 90)}
+                  onChange={(e) => handleParamChange("targetDurationSec", parseInt(e.target.value, 10))}
+                  style={{
+                    padding: "6px 8px",
+                    borderRadius: "var(--radius-sm)",
+                    border: "1px solid var(--border)",
+                    fontSize: "12px",
+                    background: "var(--bg-subtle)",
+                    color: "var(--text-primary)",
+                    outline: "none",
+                  }}
+                >
+                  <option value="15">15 Seconds (Story / Ad)</option>
+                  <option value="30">30 Seconds (Social Reel)</option>
+                  <option value="60">60 Seconds (Standard Short)</option>
+                  <option value="90">90 Seconds (Cinematic Anthem)</option>
+                  <option value="180">180 Seconds (Extended Cut)</option>
+                </select>
+              </div>
+            </div>
+          )}
+
+          {/* 4. AUDIO_DUCKING_SIDECHAIN */}
+          {selectedNode.type === "AUDIO_DUCKING_SIDECHAIN" && (
+            <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "11px" }}>
+                  <span style={{ color: "var(--text-secondary)" }}>Music Ducking Attenuation</span>
+                  <span style={{ fontWeight: 600 }}>{((selectedNode.parameters.duckingDb as number) ?? -14)} dB</span>
+                </div>
+                <input
+                  type="range"
+                  min="-24"
+                  max="-6"
+                  step="1"
+                  value={((selectedNode.parameters.duckingDb as number) ?? -14)}
+                  onChange={(e) => handleParamChange("duckingDb", parseInt(e.target.value, 10))}
+                  style={{ width: "100%", accentColor: "var(--accent)" }}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* 5. CREATIVE_SPEED_RAMP */}
+          {selectedNode.type === "CREATIVE_SPEED_RAMP" && (
+            <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                <span style={{ fontSize: "11px", color: "var(--text-secondary)" }}>Speed Acceleration Factor</span>
+                <select
+                  value={String(selectedNode.parameters.factor || 1.25)}
+                  onChange={(e) => handleParamChange("factor", parseFloat(e.target.value))}
+                  style={{
+                    padding: "6px 8px",
+                    borderRadius: "var(--radius-sm)",
+                    border: "1px solid var(--border)",
+                    fontSize: "12px",
+                    background: "var(--bg-subtle)",
+                    color: "var(--text-primary)",
+                    outline: "none",
+                  }}
+                >
+                  <option value="0.5">0.5x (Slow Motion)</option>
+                  <option value="1.0">1.0x (Normal Speed)</option>
+                  <option value="1.25">1.25x (Dynamic Paced)</option>
+                  <option value="1.5">1.5x (High Energy)</option>
+                  <option value="2.0">2.0x (Timelapse Motion)</option>
+                </select>
+              </div>
+            </div>
+          )}
+
+          {/* Generic Parameters Key-Value Fallback */}
           {Object.entries(selectedNode.parameters).map(([k, v]) => (
-            <div key={k} style={{ display: "flex", justifyContent: "space-between", fontSize: "11px", background: "var(--bg-subtle)", padding: "4px 8px", borderRadius: "4px" }}>
+            <div key={k} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "11px", background: "var(--bg-subtle)", padding: "5px 8px", borderRadius: "4px" }}>
               <span style={{ color: "var(--text-secondary)" }}>{k}</span>
-              <span style={{ fontFamily: "monospace", color: "var(--text-primary)" }}>{String(v)}</span>
+              <span style={{ fontFamily: "monospace", color: "var(--text-primary)", fontWeight: 500 }}>{String(v)}</span>
             </div>
           ))}
+
+          {/* Run Single Node Button */}
+          <div style={{ marginTop: "8px" }}>
+            <button
+              onClick={() => onExecuteNode && onExecuteNode(selectedNode.id)}
+              style={{
+                width: "100%",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: "6px",
+                background: "var(--accent)",
+                border: "none",
+                color: "white",
+                padding: "8px 12px",
+                borderRadius: "var(--radius-sm)",
+                fontSize: "12px",
+                fontWeight: 600,
+                cursor: "pointer",
+                boxShadow: "0 2px 6px rgba(79, 115, 247, 0.3)",
+              }}
+            >
+              <Play size={12} />
+              <span>Execute This Node</span>
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -210,14 +524,90 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
 
   if (!selectedClip) {
     return (
-      <div style={{ padding: "32px 16px", textAlign: "center", color: "var(--text-muted)", fontSize: "12px" }}>
-        Select a timeline clip to inspect transform, professional color grading, and audio DSP properties
+      <div style={{ display: "flex", flexDirection: "column", height: "100%", background: "var(--bg-surface)" }}>
+        <div style={{ flex: 1, overflowY: "auto" }}>
+          <AIDirectorPanel
+            timeline={timeline || { timelineId: "default", version: 1, timebase: { numerator: 30, denominator: 1 }, canvas: { width: 1920, height: 1080, pixelAspectRatio: "16:9", colorSpace: "Rec.709" }, tracks: [], markers: [] }}
+            timelineBefore={timelineBefore}
+            assets={assets}
+            creativeBrief={creativeBrief}
+            onUpdateCreativeBrief={onUpdateCreativeBrief}
+            onDirectPrompt={onDirectPrompt || (() => {})}
+            isThinking={isThinking}
+            activeAiRun={activeAiRun}
+            hasPendingChanges={hasPendingChanges}
+            onReviewChanges={onReviewChanges}
+            onApproveChanges={onApproveChanges}
+            onRejectChanges={onRejectChanges}
+            currentFrame={currentFrame}
+          />
+        </div>
       </div>
     );
   }
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", background: "var(--bg-surface)", overflowY: "auto" }}>
+      {/* Tab Switcher: Clip Properties vs AI Director */}
+      <div style={{ display: "flex", background: "var(--bg-subtle)", borderBottom: "1px solid var(--border)", padding: "4px" }}>
+        <button
+          onClick={() => setActiveTab("PROPERTIES")}
+          style={{
+            flex: 1,
+            padding: "6px",
+            fontSize: "11px",
+            fontWeight: 600,
+            borderRadius: "var(--radius-sm)",
+            border: "none",
+            background: activeTab === "PROPERTIES" ? "var(--bg-surface)" : "transparent",
+            color: activeTab === "PROPERTIES" ? "var(--accent)" : "var(--text-secondary)",
+            boxShadow: activeTab === "PROPERTIES" ? "var(--shadow-xs)" : "none",
+            cursor: "pointer",
+          }}
+        >
+          Clip Inspector
+        </button>
+        <button
+          onClick={() => setActiveTab("AI_DIRECTOR")}
+          style={{
+            flex: 1,
+            padding: "6px",
+            fontSize: "11px",
+            fontWeight: 600,
+            borderRadius: "var(--radius-sm)",
+            border: "none",
+            background: activeTab === "AI_DIRECTOR" ? "var(--bg-surface)" : "transparent",
+            color: activeTab === "AI_DIRECTOR" ? "var(--accent)" : "var(--text-secondary)",
+            boxShadow: activeTab === "AI_DIRECTOR" ? "var(--shadow-xs)" : "none",
+            cursor: "pointer",
+          }}
+        >
+          AI Director
+        </button>
+      </div>
+
+      {activeTab === "AI_DIRECTOR" ? (
+        <div style={{ flex: 1, overflowY: "auto" }}>
+          <AIDirectorPanel
+            timeline={timeline || { timelineId: "default", version: 1, timebase: { numerator: 30, denominator: 1 }, canvas: { width: 1920, height: 1080, pixelAspectRatio: "16:9", colorSpace: "Rec.709" }, tracks: [], markers: [] }}
+            timelineBefore={timelineBefore}
+            assets={assets}
+            creativeBrief={creativeBrief}
+            onUpdateCreativeBrief={onUpdateCreativeBrief}
+            onDirectPrompt={onDirectPrompt || (() => {})}
+            isThinking={isThinking}
+            activeAiRun={activeAiRun}
+            hasPendingChanges={hasPendingChanges}
+            onReviewChanges={onReviewChanges}
+            onApproveChanges={onApproveChanges}
+            onRejectChanges={onRejectChanges}
+            currentFrame={currentFrame}
+            selectedClipName={selectedClip?.name}
+          />
+        </div>
+      ) : (
+        <>
+
       {/* 1. Clip Identity Header */}
       <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <div>
@@ -236,17 +626,19 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
       {/* 2. Transform & Speed Accordion */}
       <div className="accordion-group">
         <button className="accordion-header" onClick={() => toggleSection("transform")}>
-          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-            <Move size={13} style={{ color: "var(--accent)" }} />
-            <span>Transform & Speed Ramp</span>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <div style={{ width: "20px", height: "20px", borderRadius: "5px", background: "var(--accent-soft)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <Move size={12} style={{ color: "var(--accent)" }} />
+            </div>
+            <span style={{ fontSize: "12px", fontWeight: 600 }}>Transform & Speed Ramp</span>
           </div>
-          {openSections.transform ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+          {openSections.transform ? <ChevronDown size={14} style={{ color: "var(--text-muted)" }} /> : <ChevronRight size={14} style={{ color: "var(--text-muted)" }} />}
         </button>
         {openSections.transform && (
           <div className="accordion-content">
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "12px" }}>
-              <span style={{ color: "var(--text-secondary)" }}>Speed Playback</span>
-              <span style={{ fontWeight: 600, color: "var(--text-primary)" }}>{selectedClip.speed}x</span>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "11px" }}>
+              <span style={{ color: "var(--text-secondary)", fontWeight: 500 }}>Speed Playback</span>
+              <span style={{ fontWeight: 700, color: "var(--accent)", background: "var(--accent-soft)", padding: "1px 6px", borderRadius: "4px", fontFamily: "monospace" }}>{selectedClip.speed}x</span>
             </div>
             <input
               type="range"
@@ -255,27 +647,34 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
               step="0.25"
               value={selectedClip.speed}
               onChange={(e) => onUpdateClipSpeed?.(selectedClip.id, parseFloat(e.target.value))}
-              style={{ accentColor: "var(--accent)", width: "100%", cursor: "pointer" }}
+              className="slider-speed"
+              style={{ width: "100%", accentColor: "var(--accent)" }}
             />
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
-              <div style={{ display: "flex", flexDirection: "column", gap: "2px", fontSize: "11px" }}>
-                <span style={{ color: "var(--text-secondary)" }}>Scale</span>
-                <input
-                  type="number"
-                  step="0.1"
-                  defaultValue={selectedClip.transform.scale.x}
-                  style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: "4px", padding: "4px", fontSize: "11px" }}
-                />
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", marginTop: "2px" }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                <span style={{ fontSize: "11px", color: "var(--text-secondary)", fontWeight: 500 }}>Scale</span>
+                <div style={{ position: "relative" }}>
+                  <input
+                    type="number"
+                    step="0.1"
+                    defaultValue={selectedClip.transform.scale.x}
+                    className="pro-input-number"
+                  />
+                  <span style={{ position: "absolute", right: "8px", top: "5px", fontSize: "10px", color: "var(--text-muted)", pointerEvents: "none" }}>x</span>
+                </div>
               </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: "2px", fontSize: "11px" }}>
-                <span style={{ color: "var(--text-secondary)" }}>Opacity</span>
-                <input
-                  type="number"
-                  min="0"
-                  max="100"
-                  defaultValue={Math.round(selectedClip.transform.opacity * 100)}
-                  style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: "4px", padding: "4px", fontSize: "11px" }}
-                />
+              <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                <span style={{ fontSize: "11px", color: "var(--text-secondary)", fontWeight: 500 }}>Opacity</span>
+                <div style={{ position: "relative" }}>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    defaultValue={Math.round(selectedClip.transform.opacity * 100)}
+                    className="pro-input-number"
+                  />
+                  <span style={{ position: "absolute", right: "8px", top: "5px", fontSize: "10px", color: "var(--text-muted)", pointerEvents: "none" }}>%</span>
+                </div>
               </div>
             </div>
           </div>
@@ -285,80 +684,43 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
       {/* 3. Professional Color Grading (Primary, Wheels, Curves, Scopes, 3D LUT Metadata) */}
       <div className="accordion-group">
         <button className="accordion-header" onClick={() => toggleSection("color")}>
-          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-            <Palette size={13} style={{ color: "var(--accent)" }} />
-            <span>Color Grading System</span>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <div style={{ width: "20px", height: "20px", borderRadius: "5px", background: "rgba(124, 58, 237, 0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <Palette size={12} style={{ color: "#7C3AED" }} />
+            </div>
+            <span style={{ fontSize: "12px", fontWeight: 600 }}>Color Grading System</span>
           </div>
-          {openSections.color ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+          {openSections.color ? <ChevronDown size={14} style={{ color: "var(--text-muted)" }} /> : <ChevronRight size={14} style={{ color: "var(--text-muted)" }} />}
         </button>
         {openSections.color && (
           <div className="accordion-content">
             {/* Color Sub-Tabs [Primary | Wheels | Curves | Scopes] */}
-            <div style={{ display: "flex", background: "var(--bg-subtle)", padding: "2px", borderRadius: "4px", marginBottom: "8px" }}>
-              <button
-                onClick={() => setColorSubTab("PRIMARY")}
-                style={{
-                  flex: 1,
-                  padding: "3px",
-                  fontSize: "10px",
-                  fontWeight: 600,
-                  border: "none",
-                  borderRadius: "3px",
-                  background: colorSubTab === "PRIMARY" ? "var(--bg-surface)" : "transparent",
-                  color: colorSubTab === "PRIMARY" ? "var(--accent)" : "var(--text-secondary)",
-                  cursor: "pointer",
-                }}
-              >
-                Primary
-              </button>
-              <button
-                onClick={() => setColorSubTab("WHEELS")}
-                style={{
-                  flex: 1,
-                  padding: "3px",
-                  fontSize: "10px",
-                  fontWeight: 600,
-                  border: "none",
-                  borderRadius: "3px",
-                  background: colorSubTab === "WHEELS" ? "var(--bg-surface)" : "transparent",
-                  color: colorSubTab === "WHEELS" ? "var(--accent)" : "var(--text-secondary)",
-                  cursor: "pointer",
-                }}
-              >
-                3-Way
-              </button>
-              <button
-                onClick={() => setColorSubTab("CURVES")}
-                style={{
-                  flex: 1,
-                  padding: "3px",
-                  fontSize: "10px",
-                  fontWeight: 600,
-                  border: "none",
-                  borderRadius: "3px",
-                  background: colorSubTab === "CURVES" ? "var(--bg-surface)" : "transparent",
-                  color: colorSubTab === "CURVES" ? "var(--accent)" : "var(--text-secondary)",
-                  cursor: "pointer",
-                }}
-              >
-                Curves
-              </button>
-              <button
-                onClick={() => setColorSubTab("SCOPES")}
-                style={{
-                  flex: 1,
-                  padding: "3px",
-                  fontSize: "10px",
-                  fontWeight: 600,
-                  border: "none",
-                  borderRadius: "3px",
-                  background: colorSubTab === "SCOPES" ? "var(--bg-surface)" : "transparent",
-                  color: colorSubTab === "SCOPES" ? "var(--accent)" : "var(--text-secondary)",
-                  cursor: "pointer",
-                }}
-              >
-                Scopes
-              </button>
+            <div style={{ display: "flex", background: "var(--bg-subtle)", padding: "3px", borderRadius: "6px", marginBottom: "6px", border: "1px solid var(--border)" }}>
+              {(["PRIMARY", "WHEELS", "CURVES", "SCOPES"] as const).map((tab) => {
+                const isActive = colorSubTab === tab;
+                const label = tab === "PRIMARY" ? "Primary" : tab === "WHEELS" ? "3-Way" : tab === "CURVES" ? "Curves" : "Scopes";
+                return (
+                  <button
+                    key={tab}
+                    onClick={() => setColorSubTab(tab)}
+                    style={{
+                      flex: 1,
+                      padding: "4px 2px",
+                      fontSize: "10px",
+                      fontWeight: isActive ? 700 : 500,
+                      border: "none",
+                      borderRadius: "4px",
+                      background: isActive ? "var(--bg-surface)" : "transparent",
+                      color: isActive ? "var(--accent)" : "var(--text-secondary)",
+                      boxShadow: isActive ? "0 1px 2px rgba(0,0,0,0.06)" : "none",
+                      cursor: "pointer",
+                      transition: "all 0.12s ease",
+                    }}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
             </div>
 
             {colorSubTab === "PRIMARY" && (
@@ -366,8 +728,8 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
                 {/* Exposure Slider */}
                 <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", fontSize: "11px" }}>
-                    <span style={{ color: "var(--text-secondary)" }}>Exposure</span>
-                    <span style={{ fontWeight: 600, color: "var(--text-primary)" }}>{exposure > 0 ? `+${exposure.toFixed(1)}` : exposure.toFixed(1)} EV</span>
+                    <span style={{ color: "var(--text-secondary)", fontWeight: 500 }}>Exposure</span>
+                    <span style={{ fontWeight: 700, color: "var(--text-primary)", fontFamily: "monospace" }}>{exposure > 0 ? `+${exposure.toFixed(1)}` : exposure.toFixed(1)} EV</span>
                   </div>
                   <input
                     type="range"
@@ -376,14 +738,17 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
                     step="0.1"
                     value={exposure}
                     onChange={(e) => setExposure(parseFloat(e.target.value))}
-                    style={{ accentColor: "var(--accent)", width: "100%", cursor: "pointer" }}
+                    className="slider-exposure"
                   />
                 </div>
 
                 {/* White Balance (Temp & Tint) */}
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
-                  <div style={{ display: "flex", flexDirection: "column", gap: "2px", fontSize: "11px" }}>
-                    <span style={{ color: "var(--text-secondary)" }}>Temp ({temperature}K)</span>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "11px" }}>
+                      <span style={{ color: "var(--text-secondary)", fontWeight: 500 }}>Temp</span>
+                      <span style={{ fontWeight: 600, color: "#D97706", fontFamily: "monospace", fontSize: "10px" }}>{temperature}K</span>
+                    </div>
                     <input
                       type="range"
                       min="2500"
@@ -391,26 +756,32 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
                       step="100"
                       value={temperature}
                       onChange={(e) => setTemperature(parseInt(e.target.value))}
-                      style={{ accentColor: "#F59E0B", cursor: "pointer" }}
+                      className="slider-temp"
                     />
                   </div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: "2px", fontSize: "11px" }}>
-                    <span style={{ color: "var(--text-secondary)" }}>Tint ({tint})</span>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "11px" }}>
+                      <span style={{ color: "var(--text-secondary)", fontWeight: 500 }}>Tint</span>
+                      <span style={{ fontWeight: 600, color: "#DB2777", fontFamily: "monospace", fontSize: "10px" }}>{tint > 0 ? `+${tint}` : tint}</span>
+                    </div>
                     <input
                       type="range"
                       min="-50"
                       max="50"
                       value={tint}
                       onChange={(e) => setTint(parseInt(e.target.value))}
-                      style={{ accentColor: "#EC4899", cursor: "pointer" }}
+                      className="slider-tint"
                     />
                   </div>
                 </div>
 
                 {/* Contrast & Saturation */}
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
-                  <div style={{ display: "flex", flexDirection: "column", gap: "2px", fontSize: "11px" }}>
-                    <span style={{ color: "var(--text-secondary)" }}>Contrast ({contrast.toFixed(2)})</span>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "11px" }}>
+                      <span style={{ color: "var(--text-secondary)", fontWeight: 500 }}>Contrast</span>
+                      <span style={{ fontWeight: 600, color: "var(--text-primary)", fontFamily: "monospace", fontSize: "10px" }}>{contrast.toFixed(2)}</span>
+                    </div>
                     <input
                       type="range"
                       min="0.5"
@@ -418,42 +789,36 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
                       step="0.05"
                       value={contrast}
                       onChange={(e) => setContrast(parseFloat(e.target.value))}
-                      style={{ accentColor: "var(--accent)", cursor: "pointer" }}
+                      style={{ accentColor: "var(--accent)" }}
                     />
                   </div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: "2px", fontSize: "11px" }}>
-                    <span style={{ color: "var(--text-secondary)" }}>Saturation ({saturation}%)</span>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "11px" }}>
+                      <span style={{ color: "var(--text-secondary)", fontWeight: 500 }}>Saturation</span>
+                      <span style={{ fontWeight: 600, color: "var(--text-primary)", fontFamily: "monospace", fontSize: "10px" }}>{saturation}%</span>
+                    </div>
                     <input
                       type="range"
                       min="0"
                       max="200"
                       value={saturation}
                       onChange={(e) => setSaturation(parseInt(e.target.value))}
-                      style={{ accentColor: "var(--accent)", cursor: "pointer" }}
+                      className="slider-saturation"
                     />
                   </div>
                 </div>
 
-                {/* 3D LUT Presets with Full Metadata Schema (Point #11) */}
-                <div style={{ display: "flex", flexDirection: "column", gap: "4px", background: "var(--bg-subtle)", padding: "8px", borderRadius: "var(--radius-sm)", border: "1px solid var(--border)" }}>
+                {/* 3D LUT Presets with Full Metadata Schema */}
+                <div style={{ display: "flex", flexDirection: "column", gap: "6px", background: "var(--bg-subtle)", padding: "10px", borderRadius: "var(--radius-sm)", border: "1px solid var(--border)", marginTop: "2px" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <span style={{ fontSize: "11px", fontWeight: 700, color: "var(--text-secondary)" }}>3D LUT Preset</span>
-                    <span style={{ fontSize: "9px", fontFamily: "monospace", color: "var(--accent)" }}>{currentLut.version}</span>
+                    <span style={{ fontSize: "11px", fontWeight: 700, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.5px" }}>3D LUT Preset</span>
+                    <span style={{ fontSize: "9px", fontFamily: "monospace", color: "var(--accent)", background: "var(--accent-soft)", padding: "1px 5px", borderRadius: "3px", fontWeight: 600 }}>{currentLut.version}</span>
                   </div>
 
                   <select
                     value={selectedLutIndex}
                     onChange={(e) => setSelectedLutIndex(parseInt(e.target.value))}
-                    style={{
-                      background: "var(--bg-surface)",
-                      border: "1px solid var(--border)",
-                      borderRadius: "var(--radius-sm)",
-                      padding: "5px 8px",
-                      fontSize: "11px",
-                      color: "var(--text-primary)",
-                      outline: "none",
-                      cursor: "pointer",
-                    }}
+                    className="pro-select"
                   >
                     {LUT_PRESETS.map((lut, idx) => (
                       <option key={lut.name} value={idx}>
@@ -463,11 +828,11 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
                   </select>
 
                   {/* Metadata fields */}
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4px", fontSize: "9px", color: "var(--text-muted)", marginTop: "2px" }}>
-                    <div>Type: <strong style={{ color: "var(--text-secondary)" }}>{currentLut.type}</strong></div>
-                    <div>Intensity: <strong style={{ color: "var(--text-secondary)" }}>{lutIntensity}%</strong></div>
-                    <div>In: <strong style={{ color: "var(--text-secondary)" }}>{currentLut.inputColorSpace}</strong></div>
-                    <div>Out: <strong style={{ color: "var(--text-secondary)" }}>{currentLut.outputColorSpace}</strong></div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4px", fontSize: "10px", color: "var(--text-secondary)", marginTop: "2px", background: "var(--bg-surface)", padding: "6px 8px", borderRadius: "4px", border: "1px solid var(--border)" }}>
+                    <div>Type: <strong style={{ color: "var(--text-primary)" }}>{currentLut.type}</strong></div>
+                    <div>Intensity: <strong style={{ color: "var(--accent)" }}>{lutIntensity}%</strong></div>
+                    <div>In: <strong style={{ color: "var(--text-primary)" }}>{currentLut.inputColorSpace}</strong></div>
+                    <div>Out: <strong style={{ color: "var(--text-primary)" }}>{currentLut.outputColorSpace}</strong></div>
                   </div>
 
                   <input
@@ -816,141 +1181,207 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
             </div>
 
             {audioViewMode === "BUS_MIXER" ? (
-              /* Real Bus Architecture Mixer */
-              <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: "6px", background: "var(--bg-subtle)", padding: "8px", borderRadius: "var(--radius-sm)", border: "1px solid var(--border)" }}>
-                  {/* Dialogue Bus */}
-                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "3px" }}>
-                    <span style={{ fontSize: "9px", fontWeight: 700, color: "var(--text-primary)" }}>DIALOGUE</span>
-                    <span style={{ fontSize: "8px", color: "var(--accent)" }}>A1 + A2</span>
-                    <div style={{ display: "flex", alignItems: "center", gap: "2px" }}>
-                      <div style={{ width: "3px", height: "65px", background: "linear-gradient(to top, #10B981 60%, #F59E0B 85%, #EF4444 100%)", borderRadius: "2px" }} />
-                      <input
-                        type="range"
-                        min="-24"
-                        max="6"
-                        value={dialogueBusGain}
-                        onChange={(e) => setDialogueBusGain(parseFloat(e.target.value))}
-                        style={{ height: "65px", writingMode: "vertical-lr", direction: "rtl", accentColor: "var(--accent)" }}
-                      />
+              /* Real Fairlight Hardware Console Mixer */
+              <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: "6px", background: "#0B0F17", padding: "10px 8px", borderRadius: "var(--radius-md)", border: "1px solid #1E293B" }}>
+                  {/* 1. Dialogue Bus */}
+                  <div className="fader-channel-strip">
+                    <span style={{ fontSize: "9px", fontWeight: 700, color: "#F8FAFC", letterSpacing: "0.5px" }}>DIALOGUE</span>
+                    <span style={{ fontSize: "8px", color: "var(--accent)", background: "rgba(79, 115, 247, 0.15)", padding: "1px 4px", borderRadius: "3px", fontWeight: 600 }}>A1 + A2</span>
+                    
+                    <div style={{ display: "flex", alignItems: "center", gap: "6px", margin: "4px 0" }}>
+                      {/* LED Meter */}
+                      <div className="led-meter-bar">
+                        <div style={{ width: "100%", height: `${Math.min(100, Math.max(10, ((dialogueBusGain + 24) / 30) * 100))}%`, background: "linear-gradient(to top, #10B981 60%, #F59E0B 85%, #EF4444 100%)", borderRadius: "1px", transition: "height 0.08s ease" }} />
+                      </div>
+                      
+                      {/* Fader Track & Thumb */}
+                      <div className="fader-slot">
+                        <div className="fader-track-groove" />
+                        <input
+                          type="range"
+                          min="-24"
+                          max="6"
+                          step="0.5"
+                          value={dialogueBusGain}
+                          onChange={(e) => setDialogueBusGain(parseFloat(e.target.value))}
+                          style={{
+                            position: "absolute",
+                            width: "80px",
+                            height: "24px",
+                            transform: "rotate(-90deg)",
+                            background: "transparent",
+                            cursor: "ns-resize",
+                            zIndex: 10,
+                            margin: 0,
+                          }}
+                        />
+                      </div>
                     </div>
-                    <span style={{ fontSize: "9px", fontFamily: "monospace" }}>{dialogueBusGain.toFixed(1)}dB</span>
+                    
+                    <span style={{ fontSize: "9px", fontFamily: "monospace", color: dialogueBusGain > 0 ? "#EF4444" : "#94A3B8", fontWeight: 600, background: "#06080D", padding: "2px 4px", borderRadius: "3px", border: "1px solid #1E293B" }}>
+                      {dialogueBusGain > 0 ? `+${dialogueBusGain.toFixed(1)}` : dialogueBusGain.toFixed(1)}dB
+                    </span>
                   </div>
 
-                  {/* Music Bus (Ducked) */}
-                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "3px" }}>
-                    <span style={{ fontSize: "9px", fontWeight: 700, color: "var(--text-primary)" }}>MUSIC</span>
-                    <span style={{ fontSize: "8px", color: "var(--warning)" }}>Ducked</span>
-                    <div style={{ display: "flex", alignItems: "center", gap: "2px" }}>
-                      <div style={{ width: "3px", height: "65px", background: "linear-gradient(to top, #10B981 40%, #F59E0B 70%, transparent 100%)", borderRadius: "2px" }} />
-                      <input
-                        type="range"
-                        min="-24"
-                        max="6"
-                        value={musicBusGain}
-                        onChange={(e) => setMusicBusGain(parseFloat(e.target.value))}
-                        style={{ height: "65px", writingMode: "vertical-lr", direction: "rtl", accentColor: "var(--warning)" }}
-                      />
+                  {/* 2. Music Bus (Ducked) */}
+                  <div className="fader-channel-strip">
+                    <span style={{ fontSize: "9px", fontWeight: 700, color: "#F8FAFC", letterSpacing: "0.5px" }}>MUSIC</span>
+                    <span style={{ fontSize: "8px", color: "#F59E0B", background: "rgba(245, 158, 11, 0.15)", padding: "1px 4px", borderRadius: "3px", fontWeight: 600 }}>Ducked</span>
+                    
+                    <div style={{ display: "flex", alignItems: "center", gap: "6px", margin: "4px 0" }}>
+                      {/* LED Meter */}
+                      <div className="led-meter-bar">
+                        <div style={{ width: "100%", height: `${Math.min(100, Math.max(10, ((musicBusGain + 24) / 30) * 85))}%`, background: "linear-gradient(to top, #10B981 50%, #F59E0B 80%, transparent 100%)", borderRadius: "1px", transition: "height 0.08s ease" }} />
+                      </div>
+                      
+                      {/* Fader Track & Thumb */}
+                      <div className="fader-slot">
+                        <div className="fader-track-groove" />
+                        <input
+                          type="range"
+                          min="-24"
+                          max="6"
+                          step="0.5"
+                          value={musicBusGain}
+                          onChange={(e) => setMusicBusGain(parseFloat(e.target.value))}
+                          style={{
+                            position: "absolute",
+                            width: "80px",
+                            height: "24px",
+                            transform: "rotate(-90deg)",
+                            background: "transparent",
+                            cursor: "ns-resize",
+                            zIndex: 10,
+                            margin: 0,
+                          }}
+                        />
+                      </div>
                     </div>
-                    <span style={{ fontSize: "9px", fontFamily: "monospace", color: "var(--danger)" }}>{musicBusGain.toFixed(1)}dB</span>
+                    
+                    <span style={{ fontSize: "9px", fontFamily: "monospace", color: "#F59E0B", fontWeight: 600, background: "#06080D", padding: "2px 4px", borderRadius: "3px", border: "1px solid #1E293B" }}>
+                      {musicBusGain > 0 ? `+${musicBusGain.toFixed(1)}` : musicBusGain.toFixed(1)}dB
+                    </span>
                   </div>
 
-                  {/* SFX Bus */}
-                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "3px" }}>
-                    <span style={{ fontSize: "9px", fontWeight: 700, color: "var(--text-primary)" }}>SFX</span>
-                    <span style={{ fontSize: "8px", color: "var(--success)" }}>A4</span>
-                    <div style={{ display: "flex", alignItems: "center", gap: "2px" }}>
-                      <div style={{ width: "3px", height: "65px", background: "linear-gradient(to top, #10B981 50%, #F59E0B 80%, transparent 100%)", borderRadius: "2px" }} />
-                      <input
-                        type="range"
-                        min="-24"
-                        max="6"
-                        value={sfxBusGain}
-                        onChange={(e) => setSfxBusGain(parseFloat(e.target.value))}
-                        style={{ height: "65px", writingMode: "vertical-lr", direction: "rtl", accentColor: "var(--success)" }}
-                      />
+                  {/* 3. SFX Bus */}
+                  <div className="fader-channel-strip">
+                    <span style={{ fontSize: "9px", fontWeight: 700, color: "#F8FAFC", letterSpacing: "0.5px" }}>SFX</span>
+                    <span style={{ fontSize: "8px", color: "#10B981", background: "rgba(16, 185, 129, 0.15)", padding: "1px 4px", borderRadius: "3px", fontWeight: 600 }}>A4</span>
+                    
+                    <div style={{ display: "flex", alignItems: "center", gap: "6px", margin: "4px 0" }}>
+                      {/* LED Meter */}
+                      <div className="led-meter-bar">
+                        <div style={{ width: "100%", height: `${Math.min(100, Math.max(10, ((sfxBusGain + 24) / 30) * 90))}%`, background: "linear-gradient(to top, #10B981 65%, #F59E0B 90%, transparent 100%)", borderRadius: "1px", transition: "height 0.08s ease" }} />
+                      </div>
+                      
+                      {/* Fader Track & Thumb */}
+                      <div className="fader-slot">
+                        <div className="fader-track-groove" />
+                        <input
+                          type="range"
+                          min="-24"
+                          max="6"
+                          step="0.5"
+                          value={sfxBusGain}
+                          onChange={(e) => setSfxBusGain(parseFloat(e.target.value))}
+                          style={{
+                            position: "absolute",
+                            width: "80px",
+                            height: "24px",
+                            transform: "rotate(-90deg)",
+                            background: "transparent",
+                            cursor: "ns-resize",
+                            zIndex: 10,
+                            margin: 0,
+                          }}
+                        />
+                      </div>
                     </div>
-                    <span style={{ fontSize: "9px", fontFamily: "monospace" }}>{sfxBusGain.toFixed(1)}dB</span>
+                    
+                    <span style={{ fontSize: "9px", fontFamily: "monospace", color: "#10B981", fontWeight: 600, background: "#06080D", padding: "2px 4px", borderRadius: "3px", border: "1px solid #1E293B" }}>
+                      {sfxBusGain > 0 ? `+${sfxBusGain.toFixed(1)}` : sfxBusGain.toFixed(1)}dB
+                    </span>
                   </div>
 
-                  {/* Master Bus */}
-                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "3px", borderLeft: "1px solid var(--border)", paddingLeft: "4px" }}>
-                    <span style={{ fontSize: "9px", fontWeight: 700, color: "var(--danger)" }}>MASTER</span>
-                    <span style={{ fontSize: "8px", color: "var(--text-muted)" }}>{lufsStandard === "YOUTUBE" ? "-14 LUFS" : "-23 LUFS"}</span>
-                    <div style={{ display: "flex", alignItems: "center", gap: "2px" }}>
-                      <div style={{ width: "3px", height: "65px", background: "linear-gradient(to top, #10B981 65%, #F59E0B 90%, #EF4444 100%)", borderRadius: "2px" }} />
-                      <input
-                        type="range"
-                        min="-24"
-                        max="6"
-                        value={masterBusGain}
-                        onChange={(e) => setMasterBusGain(parseFloat(e.target.value))}
-                        style={{ height: "65px", writingMode: "vertical-lr", direction: "rtl", accentColor: "var(--danger)" }}
-                      />
+                  {/* 4. Master Bus */}
+                  <div className="fader-channel-strip" style={{ borderColor: "rgba(239, 68, 68, 0.4)", background: "#11141E" }}>
+                    <span style={{ fontSize: "9px", fontWeight: 700, color: "#EF4444", letterSpacing: "0.5px" }}>MASTER</span>
+                    <span style={{ fontSize: "8px", color: "#94A3B8", background: "rgba(255, 255, 255, 0.08)", padding: "1px 4px", borderRadius: "3px", fontWeight: 600 }}>{lufsStandard === "YOUTUBE" ? "-14 LUFS" : "-23 LUFS"}</span>
+                    
+                    <div style={{ display: "flex", alignItems: "center", gap: "6px", margin: "4px 0" }}>
+                      {/* LED Meter */}
+                      <div className="led-meter-bar">
+                        <div style={{ width: "100%", height: `${Math.min(100, Math.max(10, ((masterBusGain + 24) / 30) * 100))}%`, background: "linear-gradient(to top, #10B981 60%, #F59E0B 85%, #EF4444 100%)", borderRadius: "1px", transition: "height 0.08s ease" }} />
+                      </div>
+                      
+                      {/* Fader Track & Thumb */}
+                      <div className="fader-slot">
+                        <div className="fader-track-groove" />
+                        <input
+                          type="range"
+                          min="-24"
+                          max="6"
+                          step="0.5"
+                          value={masterBusGain}
+                          onChange={(e) => setMasterBusGain(parseFloat(e.target.value))}
+                          style={{
+                            position: "absolute",
+                            width: "80px",
+                            height: "24px",
+                            transform: "rotate(-90deg)",
+                            background: "transparent",
+                            cursor: "ns-resize",
+                            zIndex: 10,
+                            margin: 0,
+                          }}
+                        />
+                      </div>
                     </div>
-                    <span style={{ fontSize: "9px", fontFamily: "monospace" }}>{masterBusGain.toFixed(1)}dB</span>
+                    
+                    <span style={{ fontSize: "9px", fontFamily: "monospace", color: masterBusGain > 0 ? "#EF4444" : "#F8FAFC", fontWeight: 700, background: "#06080D", padding: "2px 4px", borderRadius: "3px", border: "1px solid #1E293B" }}>
+                      {masterBusGain > 0 ? `+${masterBusGain.toFixed(1)}` : masterBusGain.toFixed(1)}dB
+                    </span>
                   </div>
                 </div>
 
                 {/* Broadcast Delivery Profiles & Sidechain Status */}
-                <div style={{ background: "var(--bg-subtle)", padding: "8px", borderRadius: "var(--radius-sm)", border: "1px solid var(--border)", display: "flex", flexDirection: "column", gap: "6px", fontSize: "11px" }}>
+                <div style={{ background: "var(--bg-subtle)", padding: "10px", borderRadius: "var(--radius-sm)", border: "1px solid var(--border)", display: "flex", flexDirection: "column", gap: "8px", fontSize: "11px" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <span style={{ color: "var(--text-secondary)" }}>Delivery Standard:</span>
-                    <span style={{ fontWeight: 600, color: "var(--success)", fontFamily: "monospace" }}>{getLufsValue()}</span>
+                    <span style={{ color: "var(--text-secondary)", fontWeight: 500 }}>Delivery Standard:</span>
+                    <span style={{ fontWeight: 700, color: "var(--success)", fontFamily: "monospace", background: "rgba(34, 160, 107, 0.1)", padding: "2px 6px", borderRadius: "4px" }}>{getLufsValue()}</span>
                   </div>
 
                   {/* Preset Buttons */}
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "4px" }}>
-                    <button
-                      onClick={() => setLufsStandard("EBU_R128")}
-                      style={{
-                        padding: "3px",
-                        fontSize: "9px",
-                        fontWeight: 600,
-                        borderRadius: "3px",
-                        border: lufsStandard === "EBU_R128" ? "1px solid var(--accent)" : "1px solid var(--border)",
-                        background: lufsStandard === "EBU_R128" ? "var(--accent-soft)" : "var(--bg-surface)",
-                        color: lufsStandard === "EBU_R128" ? "var(--accent)" : "var(--text-secondary)",
-                        cursor: "pointer",
-                      }}
-                    >
-                      EBU R128 (-23)
-                    </button>
-                    <button
-                      onClick={() => setLufsStandard("YOUTUBE")}
-                      style={{
-                        padding: "3px",
-                        fontSize: "9px",
-                        fontWeight: 600,
-                        borderRadius: "3px",
-                        border: lufsStandard === "YOUTUBE" ? "1px solid var(--accent)" : "1px solid var(--border)",
-                        background: lufsStandard === "YOUTUBE" ? "var(--accent-soft)" : "var(--bg-surface)",
-                        color: lufsStandard === "YOUTUBE" ? "var(--accent)" : "var(--text-secondary)",
-                        cursor: "pointer",
-                      }}
-                    >
-                      YouTube (-14)
-                    </button>
-                    <button
-                      onClick={() => setLufsStandard("PODCAST")}
-                      style={{
-                        padding: "3px",
-                        fontSize: "9px",
-                        fontWeight: 600,
-                        borderRadius: "3px",
-                        border: lufsStandard === "PODCAST" ? "1px solid var(--accent)" : "1px solid var(--border)",
-                        background: lufsStandard === "PODCAST" ? "var(--accent-soft)" : "var(--bg-surface)",
-                        color: lufsStandard === "PODCAST" ? "var(--accent)" : "var(--text-secondary)",
-                        cursor: "pointer",
-                      }}
-                    >
-                      Podcast (-16)
-                    </button>
+                    {(["EBU_R128", "YOUTUBE", "PODCAST"] as const).map((std) => {
+                      const isActive = lufsStandard === std;
+                      const label = std === "EBU_R128" ? "EBU R128 (-23)" : std === "YOUTUBE" ? "YouTube (-14)" : "Podcast (-16)";
+                      return (
+                        <button
+                          key={std}
+                          onClick={() => setLufsStandard(std)}
+                          style={{
+                            padding: "5px 4px",
+                            fontSize: "9px",
+                            fontWeight: isActive ? 700 : 500,
+                            borderRadius: "4px",
+                            border: isActive ? "1px solid var(--accent)" : "1px solid var(--border)",
+                            background: isActive ? "var(--accent-soft)" : "var(--bg-surface)",
+                            color: isActive ? "var(--accent)" : "var(--text-secondary)",
+                            cursor: "pointer",
+                            transition: "all 0.12s ease",
+                          }}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
                   </div>
 
-                  <div style={{ display: "flex", justifyContent: "space-between", marginTop: "2px" }}>
-                    <span style={{ color: "var(--text-secondary)" }}>Sidechain Speech Ducking:</span>
-                    <span style={{ fontWeight: 600, color: "var(--accent)" }}>Music Bus −14 dB (Active)</span>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingTop: "2px", borderTop: "1px solid var(--border)" }}>
+                    <span style={{ color: "var(--text-secondary)", fontSize: "10px" }}>Sidechain Speech Ducking:</span>
+                    <span style={{ fontWeight: 600, color: "var(--accent)", fontSize: "10px" }}>Music Bus −14 dB (Active)</span>
                   </div>
                 </div>
               </div>
@@ -975,6 +1406,8 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
           </div>
         )}
       </div>
+        </>
+      )}
     </div>
   );
 };

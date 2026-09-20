@@ -70,6 +70,7 @@ export interface TimelineTrack {
   index: number;
   muted: boolean;
   locked: boolean;
+  solo?: boolean;
   volume?: number; // dB offset (-60 to +12)
   pan?: number; // -1.0 (Left) to 1.0 (Right)
   clips: TimelineClip[];

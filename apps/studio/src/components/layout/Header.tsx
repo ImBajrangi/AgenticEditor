@@ -1,33 +1,28 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import {
-  Film,
-  Workflow,
-  CheckCircle2,
+  Sparkles,
   Undo2,
   Redo2,
   Download,
   Settings,
   Activity,
   Layers,
-  Layout,
-  Sparkles,
-  Sliders,
+  CheckCircle2,
+  PlaySquare,
+  Workflow,
+  Share2,
+  ChevronDown,
+  Monitor,
+  Check,
 } from "lucide-react";
 
-export type WorkspaceMode = "CREATE" | "REVIEW" | "EXPORT";
-export type WorkspacePreset =
-  | "CREATE"
-  | "REVIEW"
-  | "EXPORT"
-  | "PRO_STUDIO";
+export type WorkspaceMode = "EDIT" | "WORKFLOW" | "REVIEW";
 
 interface HeaderProps {
   mode: WorkspaceMode;
   setMode: (mode: WorkspaceMode) => void;
-  isProMode: boolean;
-  onToggleProMode: () => void;
   projectName: string;
   onProjectChange?: (name: string) => void;
   canUndo: boolean;
@@ -38,13 +33,15 @@ interface HeaderProps {
   onOpenRender: () => void;
   onOpenSettings: () => void;
   isRendering?: boolean;
+  isAiThinking?: boolean;
+  aspectRatio: "16:9" | "9:16" | "1:1";
+  onAspectRatioChange: (ratio: "16:9" | "9:16" | "1:1") => void;
+  timelineVersion?: number;
 }
 
 export const Header: React.FC<HeaderProps> = ({
   mode,
   setMode,
-  isProMode,
-  onToggleProMode,
   projectName,
   canUndo,
   canRedo,
@@ -53,26 +50,33 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenSystemStatus,
   onOpenRender,
   onOpenSettings,
-  isRendering,
+  isRendering = false,
+  isAiThinking = false,
+  aspectRatio,
+  onAspectRatioChange,
+  timelineVersion = 1,
 }) => {
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const [showRatioMenu, setShowRatioMenu] = useState(false);
+
   return (
     <header className="top-bar-container" role="banner">
-      {/* 1. Left: Brand & Document Meta */}
+      {/* 1. Left: Project Info & Undo/Redo */}
       <div className="top-bar-left">
         <div className="brand-section">
-          <div className="brand-icon-box" title="AetherEdit OS — Autonomous AI Video Director">
+          <div className="brand-icon-box" title="AetherEdit OS Studio">
             <Sparkles size={18} />
           </div>
           <div className="brand-meta">
             <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
               <span className="brand-title">{projectName}</span>
-              <span style={{ fontSize: "10px", background: "var(--accent-soft)", color: "var(--accent)", padding: "1px 6px", borderRadius: "4px", fontWeight: 700 }}>
-                AI DIRECTOR
+              <span style={{ fontSize: "10px", background: "var(--accent-soft)", color: "var(--accent)", padding: "1px 6px", borderRadius: "4px", fontWeight: 600 }}>
+                v{timelineVersion || 1}
               </span>
             </div>
             <div className="brand-sub-badge">
               <span className="save-indicator-dot" />
-              <span>Autosaved • Ready for direction</span>
+              <span>Auto-saved to Vault</span>
             </div>
           </div>
         </div>
@@ -85,7 +89,7 @@ export const Header: React.FC<HeaderProps> = ({
             onClick={onUndo}
             disabled={!canUndo}
             className="btn-icon-subtle"
-            title="Undo Last AI Edit (⌘Z)"
+            title="Undo (⌘Z)"
             aria-label="Undo"
           >
             <Undo2 size={15} />
@@ -102,17 +106,27 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
       </div>
 
-      {/* 2. Center: 3 Primary Modes [Create | Review | Export] */}
+      {/* 2. Center: Mode Switcher [Edit | Workflow | Review] (Section 3 & 8) */}
       <div className="top-bar-center">
         <div className="mode-switcher-pill" role="tablist">
           <button
-            onClick={() => setMode("CREATE")}
-            className={`mode-tab-btn ${mode === "CREATE" ? "mode-tab-btn-active" : ""}`}
+            onClick={() => setMode("EDIT")}
+            className={`mode-tab-btn ${mode === "EDIT" ? "mode-tab-btn-active" : ""}`}
             role="tab"
-            aria-selected={mode === "CREATE"}
+            aria-selected={mode === "EDIT"}
           >
-            <Sparkles size={14} />
-            <span>Create</span>
+            <PlaySquare size={14} />
+            <span>Edit</span>
+          </button>
+
+          <button
+            onClick={() => setMode("WORKFLOW")}
+            className={`mode-tab-btn ${mode === "WORKFLOW" ? "mode-tab-btn-active" : ""}`}
+            role="tab"
+            aria-selected={mode === "WORKFLOW"}
+          >
+            <Workflow size={14} />
+            <span>Workflow</span>
           </button>
 
           <button
@@ -122,78 +136,139 @@ export const Header: React.FC<HeaderProps> = ({
             aria-selected={mode === "REVIEW"}
           >
             <CheckCircle2 size={14} />
-            <span>Review Diff</span>
-          </button>
-
-          <button
-            onClick={() => {
-              setMode("EXPORT");
-              onOpenRender();
-            }}
-            className={`mode-tab-btn ${mode === "EXPORT" ? "mode-tab-btn-active" : ""}`}
-            role="tab"
-            aria-selected={mode === "EXPORT"}
-          >
-            <Download size={14} />
-            <span>Export</span>
+            <span>Review</span>
           </button>
         </div>
       </div>
 
-      {/* 3. Right: Pro Mode Toggle + System Diagnostics + Settings + Render */}
+      {/* 3. Right: Status Indicators + Ratio + Settings + Export */}
       <div className="top-bar-right">
-        {/* Pro NLE Mode Toggle (Progressive Disclosure) */}
-        <button
-          onClick={onToggleProMode}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "5px",
-            background: isProMode ? "var(--bg-active)" : "var(--bg-subtle)",
-            border: isProMode ? "1px solid var(--accent)" : "1px solid var(--border)",
-            color: isProMode ? "var(--accent)" : "var(--text-secondary)",
-            padding: "5px 10px",
-            borderRadius: "var(--radius-sm)",
-            fontSize: "11px",
-            fontWeight: 600,
-            cursor: "pointer",
-            transition: "all 0.15s ease",
-          }}
-          title="Toggle between AI-First Director view and full Pro NLE Multi-Track view"
-        >
-          <Sliders size={13} />
-          <span>{isProMode ? "Pro Studio: ON" : "Pro Studio"}</span>
-        </button>
+        {/* Status Indicators */}
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          {/* AI Status */}
+          <div className="status-chip" title="AI Director Execution State">
+            <span
+              style={{
+                width: "6px",
+                height: "6px",
+                borderRadius: "50%",
+                background: isAiThinking ? "var(--warning)" : "var(--accent)",
+              }}
+            />
+            <span>{isAiThinking ? "AI Editing..." : "AI Ready"}</span>
+          </div>
 
-        {/* System Diagnostics Trigger */}
+          {/* Render Status */}
+          <div className="status-chip" title="Hardware Engine State">
+            <span
+              style={{
+                width: "6px",
+                height: "6px",
+                borderRadius: "50%",
+                background: isRendering ? "var(--warning)" : "var(--success)",
+              }}
+            />
+            <span>{isRendering ? "Rendering..." : "Engine Idle"}</span>
+          </div>
+        </div>
+
+        <div className="divider-vert" />
+
+        {/* Aspect Ratio Selector */}
+        <div style={{ position: "relative" }}>
+          <button
+            onClick={() => setShowRatioMenu(!showRatioMenu)}
+            className="btn-icon-subtle"
+            style={{
+              padding: "5px 8px",
+              borderRadius: "var(--radius-sm)",
+              border: "1px solid var(--border)",
+              fontSize: "12px",
+              fontWeight: 600,
+              gap: "4px",
+            }}
+            title="Aspect Ratio"
+          >
+            <Monitor size={14} />
+            <span>{aspectRatio}</span>
+            <ChevronDown size={12} />
+          </button>
+
+          {showRatioMenu && (
+            <div
+              style={{
+                position: "absolute",
+                top: "100%",
+                right: 0,
+                marginTop: "4px",
+                background: "var(--bg-surface)",
+                border: "1px solid var(--border)",
+                borderRadius: "var(--radius-md)",
+                boxShadow: "var(--shadow-md)",
+                padding: "4px",
+                minWidth: "110px",
+                zIndex: 60,
+              }}
+            >
+              {(["16:9", "9:16", "1:1"] as const).map((ratio) => (
+                <button
+                  key={ratio}
+                  onClick={() => {
+                    onAspectRatioChange(ratio);
+                    setShowRatioMenu(false);
+                  }}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    width: "100%",
+                    padding: "6px 10px",
+                    fontSize: "12px",
+                    fontWeight: 500,
+                    background: aspectRatio === ratio ? "var(--accent-soft)" : "transparent",
+                    color: aspectRatio === ratio ? "var(--accent)" : "var(--text-primary)",
+                    border: "none",
+                    borderRadius: "var(--radius-sm)",
+                    cursor: "pointer",
+                  }}
+                >
+                  <span>{ratio}</span>
+                  {aspectRatio === ratio && <Check size={12} />}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* System Diagnostics */}
         <button
           onClick={onOpenSystemStatus}
           className="btn-icon-subtle"
-          style={{ border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", padding: "7px" }}
-          title="System Diagnostics & Engine Status"
+          title="Hardware & Engine Diagnostics"
         >
-          <Activity size={15} style={{ color: "var(--accent)" }} />
+          <Activity size={16} />
         </button>
 
         {/* Settings */}
         <button
           onClick={onOpenSettings}
           className="btn-icon-subtle"
-          style={{ border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", padding: "7px" }}
-          title="System & AI Settings"
+          title="Settings (API Keys & Engine)"
         >
-          <Settings size={15} />
+          <Settings size={16} />
         </button>
 
-        {/* Quick Export Button */}
-        <button
-          onClick={onOpenRender}
-          disabled={isRendering}
-          className="export-primary-btn"
-        >
-          <Download size={14} />
-          <span>{isRendering ? "Compiling..." : "Export"}</span>
-        </button>
+        {/* Export Primary Action Button (Section 8) */}
+        <div style={{ position: "relative" }}>
+          <button
+            onClick={() => onOpenRender()}
+            className="export-primary-btn"
+            title="Export Video"
+          >
+            <Download size={14} />
+            <span>Export</span>
+          </button>
+        </div>
       </div>
     </header>
   );
