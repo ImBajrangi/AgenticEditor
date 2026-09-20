@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { IntelligentModelRouter } from "@aetheredit/ai-gateway";
-import { TimelineIR, TimelineMutationOp, TimelineClip, TimelineTrack } from "@aetheredit/timeline-ir";
+import { TimelineIR, TimelineMutationOp, TimelineClip, TimelineTrack, TimelineMutator } from "@aetheredit/timeline-ir";
 import { WorkflowGraph, WorkflowNode, WorkflowEdge } from "@aetheredit/workflow-engine";
 
 const router = new IntelligentModelRouter();
@@ -17,6 +17,30 @@ export interface AgentThinkingStep {
   thought: string;
   action: string;
   timestampMs: number;
+}
+
+export interface DetailedActionInfo {
+  targetClipName: string;
+  targetClipId: string;
+  trackName: string;
+  actionType: "SPLIT" | "TRIM" | "SPEED" | "TRANSFORM" | "COLOR" | "DELETE" | "AUDIO" | "REEL" | "SCRIPT" | "UNIVERSAL";
+  beforeState: {
+    durationSec: string;
+    startSec: string;
+    speed: string;
+    scale: string;
+    rotation: string;
+    effectsCount: number;
+  };
+  afterState: {
+    durationSec: string;
+    startSec: string;
+    speed: string;
+    scale: string;
+    rotation: string;
+    effectsCount: number;
+  };
+  deltaDescription: string;
 }
 
 export interface ScriptScene {
@@ -44,7 +68,18 @@ export interface VideoScript {
 
 export async function POST(req: Request) {
   try {
-    const { prompt, timeline, workflow, policy, currentFrame, assets, customScript } = (await req.json()) as {
+    const {
+      prompt,
+      timeline,
+      workflow,
+      policy,
+      currentFrame,
+      assets,
+      customScript,
+      selectedClipId,
+      selectedClipName,
+      selectedTrackId,
+    } = (await req.json()) as {
       prompt: string;
       timeline: TimelineIR;
       workflow?: WorkflowGraph;
@@ -52,6 +87,9 @@ export async function POST(req: Request) {
       currentFrame?: number;
       assets?: Array<{ id: string; title: string; durationFrames?: number }>;
       customScript?: VideoScript;
+      selectedClipId?: string;
+      selectedClipName?: string;
+      selectedTrackId?: string;
     };
 
     if (policy) {
@@ -59,7 +97,6 @@ export async function POST(req: Request) {
     }
 
     const rawPrompt = prompt || "";
-    // Clean prompt: extract core instruction without bracketed metadata tags
     const cleanPrompt = rawPrompt.replace(/\[Clip:.*?, Playhead:.*?\]/i, "").trim();
     const lowerPrompt = cleanPrompt.toLowerCase();
 
@@ -73,26 +110,19 @@ export async function POST(req: Request) {
     const subSec = Math.floor((totalSecs % 1) * 10);
     const timeStr = `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}.${subSec}`;
 
-    // Locate video & audio tracks
-    const vTrack: TimelineTrack =
-      timeline.tracks.find((t) => t.type === "VIDEO" && t.clips.length > 0) ||
-      timeline.tracks.find((t) => t.type === "VIDEO") ||
-      timeline.tracks[0];
-
-    const aTrack: TimelineTrack | undefined =
-      timeline.tracks.find((t) => t.type === "AUDIO") ||
-      timeline.tracks.find((t) => t.id !== vTrack?.id);
-
-    // Extract selected clip hint if passed
+    // Extract selected clip hint if passed in prompt
     const clipTagMatch = rawPrompt.match(/\[Clip:\s*([^,\]]+)/i);
     const hintedClipName = clipTagMatch ? clipTagMatch[1].trim() : "";
 
-    // Find active clip:
+    // -------------------------------------------------------------------------
+    // ACCURATE CLIP & TRACK RESOLUTION
+    // -------------------------------------------------------------------------
     let activeClip: TimelineClip | undefined;
 
-    if (hintedClipName && hintedClipName !== "all") {
+    // 1. By explicit selectedClipId
+    if (selectedClipId) {
       for (const t of timeline.tracks) {
-        const found = t.clips.find((c) => c.name.toLowerCase() === hintedClipName.toLowerCase() || c.id === hintedClipName);
+        const found = t.clips.find((c) => c.id === selectedClipId);
         if (found) {
           activeClip = found;
           break;
@@ -100,19 +130,59 @@ export async function POST(req: Request) {
       }
     }
 
-    if (!activeClip && vTrack && vTrack.clips.length > 0) {
-      activeClip = vTrack.clips.find(
-        (c) => frame >= c.timelineRange.start && frame < c.timelineRange.start + c.timelineRange.duration
-      );
-      if (!activeClip) {
-        activeClip = vTrack.clips.reduce((prev, curr) => {
-          const prevDist = Math.abs(prev.timelineRange.start - frame);
-          const currDist = Math.abs(curr.timelineRange.start - frame);
-          return currDist < prevDist ? curr : prev;
-        }, vTrack.clips[0]);
+    // 2. By selectedClipName or hinted name
+    if (!activeClip && (selectedClipName || hintedClipName)) {
+      const nameToMatch = (selectedClipName || hintedClipName).toLowerCase();
+      if (nameToMatch !== "all") {
+        for (const t of timeline.tracks) {
+          const found = t.clips.find((c) => c.name.toLowerCase() === nameToMatch || c.id === nameToMatch || c.assetId === nameToMatch);
+          if (found) {
+            activeClip = found;
+            break;
+          }
+        }
       }
     }
 
+    // 3. By prompt keywords if the user named a specific clip in their prompt
+    if (!activeClip) {
+      for (const t of timeline.tracks) {
+        for (const c of t.clips) {
+          if (c.name && lowerPrompt.includes(c.name.toLowerCase())) {
+            activeClip = c;
+            break;
+          }
+        }
+        if (activeClip) break;
+      }
+    }
+
+    // 4. By playhead frame containment on any track (video preferred)
+    if (!activeClip) {
+      for (const t of timeline.tracks) {
+        const found = t.clips.find((c) => frame >= c.timelineRange.start && frame < c.timelineRange.start + c.timelineRange.duration);
+        if (found) {
+          activeClip = found;
+          break;
+        }
+      }
+    }
+
+    // 5. Closest clip to playhead on primary video track
+    const vTrack: TimelineTrack =
+      timeline.tracks.find((t) => t.type === "VIDEO" && t.clips.length > 0) ||
+      timeline.tracks.find((t) => t.type === "VIDEO") ||
+      timeline.tracks[0];
+
+    if (!activeClip && vTrack && vTrack.clips.length > 0) {
+      activeClip = vTrack.clips.reduce((prev, curr) => {
+        const prevDist = Math.abs(prev.timelineRange.start - frame);
+        const currDist = Math.abs(curr.timelineRange.start - frame);
+        return currDist < prevDist ? curr : prev;
+      }, vTrack.clips[0]);
+    }
+
+    // 6. First available clip across all tracks
     if (!activeClip) {
       for (const t of timeline.tracks) {
         if (t.clips.length > 0) {
@@ -122,6 +192,15 @@ export async function POST(req: Request) {
       }
     }
 
+    // Target Track that directly owns activeClip
+    const owningTrack = timeline.tracks.find((t) => t.clips.some((c) => c.id === activeClip?.id)) || vTrack;
+    const aTrack = timeline.tracks.find((t) => t.type === "AUDIO") || timeline.tracks.find((t) => t.id !== owningTrack?.id);
+
+    const targetClipName = activeClip?.name || "Active Clip";
+    const targetClipId = activeClip?.id || "clip_01";
+    const targetTrackId = owningTrack?.id || "trk_v1_primary";
+    const targetTrackName = owningTrack?.name || "Video 1";
+
     let agentName = "Master AI Orchestrator";
     let reasoning = "";
     const agentSteps: AgentExecutionStep[] = [];
@@ -129,9 +208,15 @@ export async function POST(req: Request) {
     const mutations: TimelineMutationOp[] = [];
     let updatedWorkflow: WorkflowGraph | undefined = workflow ? JSON.parse(JSON.stringify(workflow)) : undefined;
     let generatedScript: VideoScript | undefined = customScript;
+    let detailedAction: DetailedActionInfo | undefined;
 
-    const targetClipName = activeClip?.name || "Active Shot";
-    const targetTrackId = vTrack ? vTrack.id : "trk_v1_primary";
+    // Snapshot before state
+    const beforeDurationSec = activeClip ? (activeClip.timelineRange.duration / fps).toFixed(2) : "0.00";
+    const beforeStartSec = activeClip ? (activeClip.timelineRange.start / fps).toFixed(2) : "0.00";
+    const beforeSpeed = activeClip ? `${activeClip.speed || 1.0}x` : "1.0x";
+    const beforeScale = activeClip?.transform?.scale ? `${activeClip.transform.scale.x}x` : "1.0x";
+    const beforeRotation = activeClip?.transform?.rotation ? `${activeClip.transform.rotation}°` : "0°";
+    const beforeEffectsCount = activeClip?.effects?.length || 0;
 
     // Candidate footage pool
     const defaultAssets = [
@@ -142,9 +227,9 @@ export async function POST(req: Request) {
     ];
     const pool = assets && assets.length > 0 ? assets : defaultAssets;
 
-    // =========================================================================
-    // INTENT: SCRIPT GENERATION & DIRECT SCRIPT-TO-TIMELINE EDITING
-    // =========================================================================
+    // -------------------------------------------------------------------------
+    // INTENT CLASSIFICATION
+    // -------------------------------------------------------------------------
     const isScriptIntent =
       customScript != null ||
       lowerPrompt.includes("script") ||
@@ -154,16 +239,111 @@ export async function POST(req: Request) {
       lowerPrompt.includes("narrat") ||
       lowerPrompt.includes("story") ||
       lowerPrompt.includes("kahani") ||
-      lowerPrompt.includes("hook") ||
       lowerPrompt.includes("vlog") ||
-      lowerPrompt.includes("travel vlog") ||
       lowerPrompt.includes("tech review");
 
+    const isSplitIntent =
+      (lowerPrompt.includes("split") ||
+        lowerPrompt.includes("cut") ||
+        lowerPrompt.includes("blade") ||
+        lowerPrompt.includes("slice") ||
+        lowerPrompt.includes("chop") ||
+        lowerPrompt.includes("kaat") ||
+        lowerPrompt.includes("tukde") ||
+        lowerPrompt.includes("separate") ||
+        lowerPrompt.includes("divide")) &&
+      !lowerPrompt.includes("dead air") &&
+      !lowerPrompt.includes("silence") &&
+      !lowerPrompt.includes("cut start") &&
+      !lowerPrompt.includes("cut end");
+
+    const isTrimIntent =
+      lowerPrompt.includes("trim") ||
+      lowerPrompt.includes("shorten") ||
+      lowerPrompt.includes("cut start") ||
+      lowerPrompt.includes("cut end") ||
+      lowerPrompt.includes("trim start") ||
+      lowerPrompt.includes("trim end") ||
+      lowerPrompt.includes("chhota") ||
+      lowerPrompt.includes("edges") ||
+      lowerPrompt.includes("head") ||
+      lowerPrompt.includes("tail") ||
+      lowerPrompt.includes("extend");
+
+    const isSpeedIntent =
+      lowerPrompt.includes("speed") ||
+      lowerPrompt.includes("fast") ||
+      lowerPrompt.includes("slow") ||
+      lowerPrompt.includes("slowmo") ||
+      lowerPrompt.includes("slow motion") ||
+      lowerPrompt.includes("tez") ||
+      lowerPrompt.includes("dheere") ||
+      lowerPrompt.includes("ramp") ||
+      /\b([0-9]+(?:\.[0-9]+)?x)\b/i.test(lowerPrompt);
+
+    const isTransformIntent =
+      lowerPrompt.includes("zoom") ||
+      lowerPrompt.includes("punch") ||
+      lowerPrompt.includes("scale") ||
+      lowerPrompt.includes("reframe") ||
+      lowerPrompt.includes("vertical") ||
+      lowerPrompt.includes("9:16") ||
+      lowerPrompt.includes("portrait") ||
+      lowerPrompt.includes("tiktok") ||
+      lowerPrompt.includes("reel") ||
+      lowerPrompt.includes("shorts") ||
+      lowerPrompt.includes("crop") ||
+      lowerPrompt.includes("rotate") ||
+      lowerPrompt.includes("flip") ||
+      lowerPrompt.includes("bada karo");
+
+    const isDeleteIntent =
+      lowerPrompt.includes("delete") ||
+      lowerPrompt.includes("remove") ||
+      lowerPrompt.includes("drop") ||
+      lowerPrompt.includes("erase") ||
+      lowerPrompt.includes("hata do") ||
+      lowerPrompt.includes("hatao") ||
+      lowerPrompt.includes("delete karo") ||
+      lowerPrompt.includes("trash");
+
+    const isColorIntent =
+      lowerPrompt.includes("color") ||
+      lowerPrompt.includes("lut") ||
+      lowerPrompt.includes("look") ||
+      lowerPrompt.includes("grade") ||
+      lowerPrompt.includes("kodak") ||
+      lowerPrompt.includes("teal") ||
+      lowerPrompt.includes("orange") ||
+      lowerPrompt.includes("noir") ||
+      lowerPrompt.includes("black and white") ||
+      lowerPrompt.includes("fuji") ||
+      lowerPrompt.includes("eterna") ||
+      lowerPrompt.includes("vibrant") ||
+      lowerPrompt.includes("saturation") ||
+      lowerPrompt.includes("contrast") ||
+      lowerPrompt.includes("rang") ||
+      lowerPrompt.includes("film look");
+
+    const isAudioIntent =
+      lowerPrompt.includes("volume") ||
+      lowerPrompt.includes("duck") ||
+      lowerPrompt.includes("mute") ||
+      lowerPrompt.includes("gain") ||
+      lowerPrompt.includes("loud") ||
+      lowerPrompt.includes("boost") ||
+      lowerPrompt.includes("sound") ||
+      lowerPrompt.includes("awaaz") ||
+      lowerPrompt.includes("normalize") ||
+      lowerPrompt.includes("audio");
+
+    // -------------------------------------------------------------------------
+    // DISPATCHING REAL MUTATIONS
+    // -------------------------------------------------------------------------
+
     if (isScriptIntent) {
-      // 1. Synthesize Video Script (or use provided customScript)
       if (!generatedScript) {
         const topic = cleanPrompt.replace(/write\s*(?:a)?\s*script\s*(?:for|about)?/i, "").trim() || "Cinematic Ocean Exploration";
-        
         generatedScript = {
           title: topic.length > 4 ? topic.charAt(0).toUpperCase() + topic.slice(1) : "The Call of the Ocean: Cinematic Travel Anthem",
           logline: "An exhilarating 3-act visual journey through ocean swells, high-speed barrel surfing, and sunset horizons.",
@@ -218,101 +398,56 @@ export async function POST(req: Request) {
         };
       }
 
-      // 2. Add Multi-Agent Deep Thinking Stream
-      thinkingTrace.push(
-        {
-          agent: "Story Agent",
-          thought: `Analyzing creative intent for "${generatedScript.title}". Formulating 3-act retention structure (Hook -> Tension -> Climax/CTA).`,
-          action: "Drafted 3-scene spoken voiceover script & pacing curve.",
-          timestampMs: Date.now() - 600,
-        },
-        {
-          agent: "Vision Agent",
-          thought: "Inspecting available media asset library embeddings; matching focal vectors to scene narrations.",
-          action: "Assigned hero b-roll shots to Scene 1, Scene 2, and Scene 3.",
-          timestampMs: Date.now() - 450,
-        },
-        {
-          agent: "Edit Agent",
-          thought: "Calculating frame-accurate in/out boundary cuts and ripple layout on primary video track.",
-          action: "Constructing multi-clip timeline cut (12.0s duration) with 24-frame dissolve transitions.",
-          timestampMs: Date.now() - 300,
-        },
-        {
-          agent: "Visual Agent",
-          thought: "Calibrating 64^3 tetrahedral 3D LUT Kodak 5207 tone curve for skin tone and highlight roll-off.",
-          action: "Applying warm filmic color grade across all sequence clips.",
-          timestampMs: Date.now() - 150,
-        },
-        {
-          agent: "Audio Agent",
-          thought: "Analyzing voiceover cadence; setting -14dB background soundtrack sidechain ducking.",
-          action: "Synchronized audio levels to ITU-R BS.1770 (-23 LUFS).",
-          timestampMs: Date.now() - 50,
-        },
-        {
-          agent: "Resolve Agent",
-          thought: "Committing atomic timeline revision and inserting timed dialogue subtitle markers.",
-          action: `Timeline bumped to v${timeline.version + 1}.`,
-          timestampMs: Date.now(),
-        }
-      );
-
-      // 3. DIRECT EDITING MUTATIONS: Re-cut timeline directly from script!
-      if (vTrack) {
-        // Clear old clips and place new script scenes sequentially
-        for (const c of vTrack.clips) {
-          mutations.push({
-            type: "REMOVE_CLIP",
-            trackId: vTrack.id,
-            clipId: c.id,
-          });
-        }
-
-        // Insert new scene clips
-        generatedScript.scenes.forEach((scene, idx) => {
-          mutations.push({
-            type: "INSERT_CLIP",
-            trackId: vTrack.id,
-            clip: {
-              id: `clip_scene_${scene.sceneNumber}_${Date.now()}_${idx}`,
-              assetId: scene.matchedAssetId,
-              name: `${scene.title.split(":")[0] || `Scene ${scene.sceneNumber}`}: ${scene.matchedAssetName}`,
-              timelineRange: {
-                start: scene.startFrame,
-                duration: scene.durationFrames,
-              },
-              sourceRange: {
-                in: 0,
-                out: scene.durationFrames,
-              },
-              speed: 1.0,
-              transform: { position: { x: 0, y: 0 }, scale: { x: 1, y: 1 }, rotation: 0, opacity: 1.0 },
-              effects: [
-                {
-                  id: `fx_lut_scene_${idx}_${Date.now()}`,
-                  pluginId: "builtin_lut_kodak",
-                  enabled: true,
-                  parameters: { lut: "Warm_Filmic_5207.cube", intensity: 0.85 },
-                },
-              ],
-            },
-          });
-
-          // Add Subtitle / Narration Marker for each scene
-          mutations.push({
-            type: "ADD_MARKER",
-            marker: {
-              id: `m_script_scene_${idx}_${Date.now()}`,
-              frame: scene.startFrame,
-              label: `💬 "${scene.narration.slice(0, 32)}..."`,
-              color: idx === 0 ? "#10B981" : idx === 1 ? "#EF4444" : "#F59E0B",
-            },
-          });
+      // Clear existing clips on target track
+      for (const c of owningTrack.clips) {
+        mutations.push({
+          type: "REMOVE_CLIP",
+          trackId: owningTrack.id,
+          clipId: c.id,
         });
       }
 
-      // Set audio ducking
+      // Insert new scene clips
+      generatedScript.scenes.forEach((scene, idx) => {
+        mutations.push({
+          type: "INSERT_CLIP",
+          trackId: owningTrack.id,
+          clip: {
+            id: `clip_scene_${scene.sceneNumber}_${Date.now()}_${idx}`,
+            assetId: scene.matchedAssetId,
+            name: `${scene.title.split(":")[0] || `Scene ${scene.sceneNumber}`}: ${scene.matchedAssetName}`,
+            timelineRange: {
+              start: scene.startFrame,
+              duration: scene.durationFrames,
+            },
+            sourceRange: {
+              in: 0,
+              out: scene.durationFrames,
+            },
+            speed: 1.0,
+            transform: { position: { x: 0, y: 0 }, scale: { x: 1, y: 1 }, rotation: 0, opacity: 1.0 },
+            effects: [
+              {
+                id: `fx_lut_scene_${idx}_${Date.now()}`,
+                pluginId: "builtin_lut_kodak",
+                enabled: true,
+                parameters: { lut: "Warm_Filmic_5207.cube", intensity: 0.85 },
+              },
+            ],
+          },
+        });
+
+        mutations.push({
+          type: "ADD_MARKER",
+          marker: {
+            id: `m_script_scene_${idx}_${Date.now()}`,
+            frame: scene.startFrame,
+            label: `💬 "${scene.narration.slice(0, 32)}..."`,
+            color: idx === 0 ? "#10B981" : idx === 1 ? "#EF4444" : "#F59E0B",
+          },
+        });
+      });
+
       if (aTrack) {
         mutations.push({
           type: "SET_TRACK_VOLUME",
@@ -321,63 +456,29 @@ export async function POST(req: Request) {
         });
       }
 
-      reasoning = `AI Story Director drafted script "${generatedScript.title}" (${generatedScript.targetDurationSec}s): Story Agent planned 3 narrative acts; Edit Agent directly assembled ${generatedScript.scenes.length} video cuts; Visual Agent applied Kodak 5207 color grade; Audio Agent ducked soundtrack to -14dB with timed narration subtitles.`;
+      detailedAction = {
+        targetClipName: generatedScript.title,
+        targetClipId: "script_cut",
+        trackName: targetTrackName,
+        actionType: "SCRIPT",
+        beforeState: { durationSec: beforeDurationSec, startSec: beforeStartSec, speed: beforeSpeed, scale: beforeScale, rotation: beforeRotation, effectsCount: beforeEffectsCount },
+        afterState: { durationSec: `${generatedScript.targetDurationSec}s`, startSec: "0.00s", speed: "1.0x", scale: "1.0x", rotation: "0°", effectsCount: generatedScript.scenes.length },
+        deltaDescription: `Directly assembled ${generatedScript.scenes.length} scripted scenes (${generatedScript.targetDurationSec}s) with timed subtitle markers and Kodak 5207 LUT.`,
+      };
+
+      reasoning = `AI Story Director assembled script "${generatedScript.title}": Placed ${generatedScript.scenes.length} video cuts, synchronized spoken narration subtitles, and applied Kodak 5207 grade with -14dB audio ducking.`;
 
       agentSteps.push(
-        {
-          agentName: "Story Agent",
-          status: "COMPLETED",
-          action: `Wrote 3-act voiceover script: "${generatedScript.title}".`,
-        },
-        {
-          agentName: "Vision Agent",
-          status: "COMPLETED",
-          action: `Matched 3 hero footage clips to spoken dialogue beats.`,
-        },
-        {
-          agentName: "Edit Agent",
-          status: "COMPLETED",
-          action: `Directly assembled ${generatedScript.scenes.length} scene cuts on track "${vTrack.name}".`,
-        },
-        {
-          agentName: "Visual Agent",
-          status: "COMPLETED",
-          action: "Mapped Kodak 5207 filmic 3D LUT (85% intensity) with skin tone protection.",
-        },
-        {
-          agentName: "Audio Agent",
-          status: "COMPLETED",
-          action: "Configured -14dB dialogue sidechain ducking and timed subtitle markers.",
-        },
-        {
-          agentName: "Resolve Agent",
-          status: "COMPLETED",
-          action: `Committed full script-to-timeline assembly (Timeline v${timeline.version + 1}).`,
-        }
+        { agentName: "Story Agent", status: "COMPLETED", action: `Wrote 3-act voiceover script: "${generatedScript.title}".` },
+        { agentName: "Vision Agent", status: "COMPLETED", action: `Matched ${generatedScript.scenes.length} hero footage assets to dialogue beats.` },
+        { agentName: "Edit Agent", status: "COMPLETED", action: `Directly assembled sequence cuts on track "${targetTrackName}".` },
+        { agentName: "Visual Agent", status: "COMPLETED", action: "Mapped Kodak 5207 filmic 3D LUT (85% intensity)." },
+        { agentName: "Audio Agent", status: "COMPLETED", action: "Calibrated -14dB dialogue ducking and timed subtitle markers." },
+        { agentName: "Resolve Agent", status: "COMPLETED", action: `Committed full script assembly (Timeline v${timeline.version + 1}).` }
       );
 
-      updatedWorkflow = createWorkflowForIntent("SCRIPT_DIRECTOR", `Script Director: ${generatedScript.title.slice(0, 24)}`, targetClipName, timeStr, targetTrackId);
-    }
-    // =========================================================================
-    // INTENT 1: SPLIT / CUT / BLADE / SLICE / KAAT DO
-    // =========================================================================
-    else if (
-      (lowerPrompt.includes("split") ||
-        lowerPrompt.includes("cut") ||
-        lowerPrompt.includes("blade") ||
-        lowerPrompt.includes("slice") ||
-        lowerPrompt.includes("chop") ||
-        lowerPrompt.includes("kaat") ||
-        lowerPrompt.includes("tukde") ||
-        lowerPrompt.includes("separate") ||
-        lowerPrompt.includes("divide")) &&
-      !lowerPrompt.includes("dead air") &&
-      !lowerPrompt.includes("silence") &&
-      !lowerPrompt.includes("cut start") &&
-      !lowerPrompt.includes("cut end") &&
-      activeClip &&
-      vTrack
-    ) {
+      updatedWorkflow = createWorkflowForIntent("SCRIPT_DIRECTOR", `Script: ${generatedScript.title.slice(0, 20)}`, targetClipName, timeStr, targetTrackId);
+    } else if (isSplitIntent && activeClip) {
       const clipStart = activeClip.timelineRange.start;
       const clipEnd = clipStart + activeClip.timelineRange.duration;
 
@@ -387,64 +488,37 @@ export async function POST(req: Request) {
       }
 
       const splitSec = (splitFrame / fps).toFixed(2);
-
-      thinkingTrace.push(
-        { agent: "Vision Agent", thought: `Inspecting frame ${splitFrame} (${splitSec}s) for subject motion vectors.`, action: "Boundary verified.", timestampMs: Date.now() - 100 },
-        { agent: "Edit Agent", thought: `Executing blade cut at frame ${splitFrame}.`, action: "Split committed.", timestampMs: Date.now() }
-      );
-
-      reasoning = `Edit Agent performed precision blade split on "${activeClip.name}" at frame ${splitFrame} (${splitSec}s); Story Agent preserved continuity and verified seamless cut boundaries.`;
-
-      agentSteps.push(
-        {
-          agentName: "Vision Agent",
-          status: "COMPLETED",
-          action: `Scanned frame ${splitFrame} for motion vectors and optical flow coherence.`,
-        },
-        {
-          agentName: "Story Agent",
-          status: "COMPLETED",
-          action: `Validated narrative continuity across split point at ${splitSec}s.`,
-        },
-        {
-          agentName: "Edit Agent",
-          status: "COMPLETED",
-          action: `Executed non-destructive blade cut on track "${vTrack.name}". Created dual synchronized sub-clips.`,
-        },
-        {
-          agentName: "Resolve Agent",
-          status: "COMPLETED",
-          action: `Committed atomic timeline mutation (Version bumped to v${timeline.version + 1}).`,
-        }
-      );
+      const part1DurationSec = ((splitFrame - clipStart) / fps).toFixed(2);
+      const part2DurationSec = ((clipEnd - splitFrame) / fps).toFixed(2);
 
       mutations.push({
         type: "SPLIT_CLIP",
-        trackId: vTrack.id,
+        trackId: owningTrack.id,
         clipId: activeClip.id,
         splitFrame,
       });
 
-      updatedWorkflow = createWorkflowForIntent("SPLIT", "Blade Split Orchestrator", activeClip.name, timeStr, vTrack.id);
-    }
-    // =========================================================================
-    // INTENT 2: TRIM / SHORTEN / EXTEND / HEAD / TAIL
-    // =========================================================================
-    else if (
-      (lowerPrompt.includes("trim") ||
-        lowerPrompt.includes("shorten") ||
-        lowerPrompt.includes("cut start") ||
-        lowerPrompt.includes("cut end") ||
-        lowerPrompt.includes("trim start") ||
-        lowerPrompt.includes("trim end") ||
-        lowerPrompt.includes("chhota") ||
-        lowerPrompt.includes("edges") ||
-        lowerPrompt.includes("head") ||
-        lowerPrompt.includes("tail") ||
-        lowerPrompt.includes("extend")) &&
-      activeClip &&
-      vTrack
-    ) {
+      detailedAction = {
+        targetClipName: activeClip.name,
+        targetClipId: activeClip.id,
+        trackName: targetTrackName,
+        actionType: "SPLIT",
+        beforeState: { durationSec: beforeDurationSec, startSec: beforeStartSec, speed: beforeSpeed, scale: beforeScale, rotation: beforeRotation, effectsCount: beforeEffectsCount },
+        afterState: { durationSec: `${part1DurationSec}s + ${part2DurationSec}s`, startSec: beforeStartSec, speed: beforeSpeed, scale: beforeScale, rotation: beforeRotation, effectsCount: beforeEffectsCount },
+        deltaDescription: `Blade cut executed at frame ${splitFrame} (${splitSec}s) on track "${targetTrackName}". Created Part 1 (${part1DurationSec}s) and Part 2 (${part2DurationSec}s).`,
+      };
+
+      reasoning = `Edit Agent performed blade cut on "${activeClip.name}" at frame ${splitFrame} (${splitSec}s); Story Agent validated narrative continuity across split boundary.`;
+
+      agentSteps.push(
+        { agentName: "Vision Agent", status: "COMPLETED", action: `Inspected optical flow at frame ${splitFrame} (${splitSec}s).` },
+        { agentName: "Story Agent", status: "COMPLETED", action: `Preserved scene narrative across cut boundary.` },
+        { agentName: "Edit Agent", status: "COMPLETED", action: `Executed blade cut at frame ${splitFrame}. Created dual independent clips.` },
+        { agentName: "Resolve Agent", status: "COMPLETED", action: `Committed split mutation (Timeline bumped to v${timeline.version + 1}).` }
+      );
+
+      updatedWorkflow = createWorkflowForIntent("SPLIT", "Blade Cut Engine", activeClip.name, timeStr, targetTrackId);
+    } else if (isTrimIntent && activeClip) {
       const isStart =
         lowerPrompt.includes("start") ||
         lowerPrompt.includes("head") ||
@@ -465,74 +539,58 @@ export async function POST(req: Request) {
       }
 
       trimDeltaFrames = Math.min(trimDeltaFrames, Math.max(1, activeClip.timelineRange.duration - 2));
+      const afterDurationFrames = activeClip.timelineRange.duration - trimDeltaFrames;
+      const afterDurationSec = (afterDurationFrames / fps).toFixed(2);
 
       if (isStart) {
         mutations.push({
           type: "TRIM_CLIP",
-          trackId: vTrack.id,
+          trackId: owningTrack.id,
           clipId: activeClip.id,
           newTimelineRange: {
             start: activeClip.timelineRange.start + trimDeltaFrames,
-            duration: activeClip.timelineRange.duration - trimDeltaFrames,
+            duration: afterDurationFrames,
           },
           newSourceRange: {
             in: activeClip.sourceRange.in + trimDeltaFrames,
             out: activeClip.sourceRange.out,
           },
         });
-        reasoning = `Edit Agent trimmed ${(trimDeltaFrames / fps).toFixed(1)}s from HEAD of "${activeClip.name}". In-point moved to frame ${activeClip.sourceRange.in + trimDeltaFrames}.`;
       } else {
         mutations.push({
           type: "TRIM_CLIP",
-          trackId: vTrack.id,
+          trackId: owningTrack.id,
           clipId: activeClip.id,
           newTimelineRange: {
-            duration: activeClip.timelineRange.duration - trimDeltaFrames,
+            duration: afterDurationFrames,
           },
           newSourceRange: {
             in: activeClip.sourceRange.in,
             out: Math.max(activeClip.sourceRange.in + 1, activeClip.sourceRange.out - trimDeltaFrames),
           },
         });
-        reasoning = `Edit Agent trimmed ${(trimDeltaFrames / fps).toFixed(1)}s from TAIL of "${activeClip.name}". Duration adjusted to ${((activeClip.timelineRange.duration - trimDeltaFrames) / fps).toFixed(1)}s.`;
       }
 
+      detailedAction = {
+        targetClipName: activeClip.name,
+        targetClipId: activeClip.id,
+        trackName: targetTrackName,
+        actionType: "TRIM",
+        beforeState: { durationSec: beforeDurationSec, startSec: beforeStartSec, speed: beforeSpeed, scale: beforeScale, rotation: beforeRotation, effectsCount: beforeEffectsCount },
+        afterState: { durationSec: `${afterDurationSec}s`, startSec: isStart ? `${((activeClip.timelineRange.start + trimDeltaFrames) / fps).toFixed(2)}s` : beforeStartSec, speed: beforeSpeed, scale: beforeScale, rotation: beforeRotation, effectsCount: beforeEffectsCount },
+        deltaDescription: `Trimmed ${(trimDeltaFrames / fps).toFixed(2)}s from ${isStart ? "HEAD" : "TAIL"} of "${activeClip.name}". Duration: ${beforeDurationSec}s ➔ ${afterDurationSec}s.`,
+      };
+
+      reasoning = `Edit Agent trimmed ${(trimDeltaFrames / fps).toFixed(1)}s from ${isStart ? "HEAD" : "TAIL"} of "${activeClip.name}" on track "${targetTrackName}".`;
+
       agentSteps.push(
-        {
-          agentName: "Vision Agent",
-          status: "COMPLETED",
-          action: `Inspected start/end frame composition on "${activeClip.name}".`,
-        },
-        {
-          agentName: "Edit Agent",
-          status: "COMPLETED",
-          action: `Adjusted in/out range bounds by ${trimDeltaFrames} frames (${(trimDeltaFrames / fps).toFixed(2)}s).`,
-        },
-        {
-          agentName: "Resolve Agent",
-          status: "COMPLETED",
-          action: `Committed trim mutation to track "${vTrack.name}".`,
-        }
+        { agentName: "Vision Agent", status: "COMPLETED", action: `Inspected start/end framing of "${activeClip.name}".` },
+        { agentName: "Edit Agent", status: "COMPLETED", action: `Adjusted in/out points by ${trimDeltaFrames} frames (${(trimDeltaFrames / fps).toFixed(2)}s).` },
+        { agentName: "Resolve Agent", status: "COMPLETED", action: `Committed trim mutation to track "${targetTrackName}".` }
       );
 
-      updatedWorkflow = createWorkflowForIntent("TRIM", "Trim & In/Out Fitter", activeClip.name, timeStr, vTrack.id);
-    }
-    // =========================================================================
-    // INTENT 3: SPEED UP / SLOW MOTION
-    // =========================================================================
-    else if (
-      (lowerPrompt.includes("speed") ||
-        lowerPrompt.includes("fast") ||
-        lowerPrompt.includes("slow") ||
-        lowerPrompt.includes("slowmo") ||
-        lowerPrompt.includes("slow motion") ||
-        lowerPrompt.includes("tez") ||
-        lowerPrompt.includes("dheere") ||
-        lowerPrompt.includes("ramp") ||
-        /\b([0-9]+(?:\.[0-9]+)?x)\b/i.test(lowerPrompt)) &&
-      activeClip &&
-      vTrack
-    ) {
+      updatedWorkflow = createWorkflowForIntent("TRIM", "Trim & In/Out Engine", activeClip.name, timeStr, targetTrackId);
+    } else if (isSpeedIntent && activeClip) {
       let speedFactor = 1.5;
       const speedMatch = cleanPrompt.match(/([0-9]+(?:\.[0-9]+)?)\s*x/i) || cleanPrompt.match(/speed\s*([0-9]+(?:\.[0-9]+)?)/i);
       if (speedMatch) {
@@ -545,59 +603,37 @@ export async function POST(req: Request) {
 
       speedFactor = Math.max(0.25, Math.min(8.0, speedFactor));
       const newDuration = Math.max(2, Math.round(activeClip.timelineRange.duration / speedFactor));
+      const afterDurationSec = (newDuration / fps).toFixed(2);
 
       mutations.push({
         type: "TRIM_CLIP",
-        trackId: vTrack.id,
+        trackId: owningTrack.id,
         clipId: activeClip.id,
         newTimelineRange: {
           duration: newDuration,
         },
       });
 
-      reasoning = `Edit Agent remapped speed of "${activeClip.name}" to ${speedFactor}x: timeline duration adjusted from ${(activeClip.timelineRange.duration / fps).toFixed(1)}s to ${(newDuration / fps).toFixed(1)}s with optical flow interpolation.`;
+      detailedAction = {
+        targetClipName: activeClip.name,
+        targetClipId: activeClip.id,
+        trackName: targetTrackName,
+        actionType: "SPEED",
+        beforeState: { durationSec: beforeDurationSec, startSec: beforeStartSec, speed: beforeSpeed, scale: beforeScale, rotation: beforeRotation, effectsCount: beforeEffectsCount },
+        afterState: { durationSec: `${afterDurationSec}s`, startSec: beforeStartSec, speed: `${speedFactor}x`, scale: beforeScale, rotation: beforeRotation, effectsCount: beforeEffectsCount },
+        deltaDescription: `Speed remapped to ${speedFactor}x on "${activeClip.name}". Timeline duration: ${beforeDurationSec}s ➔ ${afterDurationSec}s.`,
+      };
+
+      reasoning = `Edit Agent remapped playback speed of "${activeClip.name}" to ${speedFactor}x: duration updated from ${beforeDurationSec}s to ${afterDurationSec}s.`;
 
       agentSteps.push(
-        {
-          agentName: "Vision Agent",
-          status: "COMPLETED",
-          action: `Calculated optical flow motion vectors for ${speedFactor}x speed interpolation.`,
-        },
-        {
-          agentName: "Edit Agent",
-          status: "COMPLETED",
-          action: `Applied ${speedFactor}x time-remapping curve; updated clip duration to ${newDuration} frames.`,
-        },
-        {
-          agentName: "Resolve Agent",
-          status: "COMPLETED",
-          action: `Updated timeline duration to match speed factor.`,
-        }
+        { agentName: "Vision Agent", status: "COMPLETED", action: `Computed optical flow vectors for ${speedFactor}x speed interpolation.` },
+        { agentName: "Edit Agent", status: "COMPLETED", action: `Applied ${speedFactor}x time remapping curve.` },
+        { agentName: "Resolve Agent", status: "COMPLETED", action: "Updated timeline duration to match speed multiplier." }
       );
 
-      updatedWorkflow = createWorkflowForIntent("SPEED", `Speed Ramp (${speedFactor}x)`, activeClip.name, timeStr, vTrack.id);
-    }
-    // =========================================================================
-    // INTENT 4: SCALE / ZOOM / PUNCH-IN / REFRAME
-    // =========================================================================
-    else if (
-      (lowerPrompt.includes("zoom") ||
-        lowerPrompt.includes("punch") ||
-        lowerPrompt.includes("scale") ||
-        lowerPrompt.includes("reframe") ||
-        lowerPrompt.includes("vertical") ||
-        lowerPrompt.includes("9:16") ||
-        lowerPrompt.includes("portrait") ||
-        lowerPrompt.includes("tiktok") ||
-        lowerPrompt.includes("reel") ||
-        lowerPrompt.includes("shorts") ||
-        lowerPrompt.includes("crop") ||
-        lowerPrompt.includes("rotate") ||
-        lowerPrompt.includes("flip") ||
-        lowerPrompt.includes("bada karo")) &&
-      activeClip &&
-      vTrack
-    ) {
+      updatedWorkflow = createWorkflowForIntent("SPEED", `Speed Remap (${speedFactor}x)`, activeClip.name, timeStr, targetTrackId);
+    } else if (isTransformIntent && activeClip) {
       let scale = 1.25;
       let rotation = 0;
 
@@ -621,7 +657,7 @@ export async function POST(req: Request) {
 
       mutations.push({
         type: "SET_CLIP_TRANSFORM",
-        trackId: vTrack.id,
+        trackId: owningTrack.id,
         clipId: activeClip.id,
         transform: {
           scale: { x: scale, y: scale },
@@ -631,94 +667,26 @@ export async function POST(req: Request) {
         },
       });
 
-      reasoning = `Visual Agent applied smart reframe to "${activeClip.name}": Scale set to ${scale}x${rotation ? `, Rotation ${rotation}°` : ""}; subject centered using facial focal tracking.`;
+      detailedAction = {
+        targetClipName: activeClip.name,
+        targetClipId: activeClip.id,
+        trackName: targetTrackName,
+        actionType: "TRANSFORM",
+        beforeState: { durationSec: beforeDurationSec, startSec: beforeStartSec, speed: beforeSpeed, scale: beforeScale, rotation: beforeRotation, effectsCount: beforeEffectsCount },
+        afterState: { durationSec: beforeDurationSec, startSec: beforeStartSec, speed: beforeSpeed, scale: `${scale}x`, rotation: `${rotation}°`, effectsCount: beforeEffectsCount },
+        deltaDescription: `Smart Reframe applied to "${activeClip.name}": Scale set to ${scale}x${rotation ? `, Rotation ${rotation}°` : ""}; subject centered using facial focal tracking.`,
+      };
+
+      reasoning = `Visual Agent applied 2D transform matrix to "${activeClip.name}": Scale set to ${scale}x${rotation ? `, Rotation ${rotation}°` : ""}.`;
 
       agentSteps.push(
-        {
-          agentName: "Vision Agent",
-          status: "COMPLETED",
-          action: `Detected primary subject bounding box; computed optimal center-crop framing coordinates.`,
-        },
-        {
-          agentName: "Visual Agent",
-          status: "COMPLETED",
-          action: `Rendered 2D affine transform matrix (Scale: ${scale}x, Rotation: ${rotation}°).`,
-        },
-        {
-          agentName: "Resolve Agent",
-          status: "COMPLETED",
-          action: `Committed transform parameters to timeline IR.`,
-        }
+        { agentName: "Vision Agent", status: "COMPLETED", action: `Detected subject focal center on "${activeClip.name}".` },
+        { agentName: "Visual Agent", status: "COMPLETED", action: `Rendered transform matrix (Scale: ${scale}x, Rotation: ${rotation}°).` },
+        { agentName: "Resolve Agent", status: "COMPLETED", action: "Committed transform parameters." }
       );
 
-      updatedWorkflow = createWorkflowForIntent("TRANSFORM", "Smart Reframe & Zoom", activeClip.name, timeStr, vTrack.id);
-    }
-    // =========================================================================
-    // INTENT 5: DELETE / REMOVE
-    // =========================================================================
-    else if (
-      (lowerPrompt.includes("delete") ||
-        lowerPrompt.includes("remove") ||
-        lowerPrompt.includes("drop") ||
-        lowerPrompt.includes("erase") ||
-        lowerPrompt.includes("hata do") ||
-        lowerPrompt.includes("hatao") ||
-        lowerPrompt.includes("delete karo") ||
-        lowerPrompt.includes("trash")) &&
-      activeClip &&
-      vTrack
-    ) {
-      mutations.push({
-        type: "REMOVE_CLIP",
-        trackId: vTrack.id,
-        clipId: activeClip.id,
-      });
-
-      reasoning = `Edit Agent removed "${activeClip.name}" from track "${vTrack.name}" with automatic downstream ripple alignment.`;
-
-      agentSteps.push(
-        {
-          agentName: "Story Agent",
-          status: "COMPLETED",
-          action: `Approved removal of "${activeClip.name}" from sequence narrative.`,
-        },
-        {
-          agentName: "Edit Agent",
-          status: "COMPLETED",
-          action: `Deleted clip from track "${vTrack.name}" and calculated ripple gap closure.`,
-        },
-        {
-          agentName: "Resolve Agent",
-          status: "COMPLETED",
-          action: `Committed clip deletion (Timeline bumped to v${timeline.version + 1}).`,
-        }
-      );
-
-      updatedWorkflow = createWorkflowForIntent("DELETE", "Shot Ripple Removal", activeClip.name, timeStr, vTrack.id);
-    }
-    // =========================================================================
-    // INTENT 6: COLOR GRADE / 3D LUT
-    // =========================================================================
-    else if (
-      (lowerPrompt.includes("color") ||
-        lowerPrompt.includes("lut") ||
-        lowerPrompt.includes("look") ||
-        lowerPrompt.includes("grade") ||
-        lowerPrompt.includes("kodak") ||
-        lowerPrompt.includes("teal") ||
-        lowerPrompt.includes("orange") ||
-        lowerPrompt.includes("noir") ||
-        lowerPrompt.includes("black and white") ||
-        lowerPrompt.includes("fuji") ||
-        lowerPrompt.includes("eterna") ||
-        lowerPrompt.includes("vibrant") ||
-        lowerPrompt.includes("saturation") ||
-        lowerPrompt.includes("contrast") ||
-        lowerPrompt.includes("rang") ||
-        lowerPrompt.includes("film look")) &&
-      activeClip &&
-      vTrack
-    ) {
+      updatedWorkflow = createWorkflowForIntent("TRANSFORM", "Smart Reframe & Zoom", activeClip.name, timeStr, targetTrackId);
+    } else if (isColorIntent && activeClip) {
       let lut = "Warm_Filmic_5207.cube";
       let lutName = "Kodak 5207 Filmic Warm";
       let intensity = 0.85;
@@ -747,7 +715,7 @@ export async function POST(req: Request) {
 
       mutations.push({
         type: "APPLY_CLIP_EFFECT",
-        trackId: vTrack.id,
+        trackId: owningTrack.id,
         clipId: activeClip.id,
         effect: {
           id: `fx_lut_${Date.now()}`,
@@ -757,43 +725,52 @@ export async function POST(req: Request) {
         },
       });
 
-      reasoning = `Visual Agent calibrated 3D tetrahedral color lookup: Mapped "${lutName}" (${Math.round(intensity * 100)}% intensity) onto "${activeClip.name}" with skin tone preservation.`;
+      detailedAction = {
+        targetClipName: activeClip.name,
+        targetClipId: activeClip.id,
+        trackName: targetTrackName,
+        actionType: "COLOR",
+        beforeState: { durationSec: beforeDurationSec, startSec: beforeStartSec, speed: beforeSpeed, scale: beforeScale, rotation: beforeRotation, effectsCount: beforeEffectsCount },
+        afterState: { durationSec: beforeDurationSec, startSec: beforeStartSec, speed: beforeSpeed, scale: beforeScale, rotation: beforeRotation, effectsCount: beforeEffectsCount + 1 },
+        deltaDescription: `Applied 3D tetrahedral LUT "${lutName}" (${Math.round(intensity * 100)}% intensity) onto "${activeClip.name}" with skin tone protection.`,
+      };
+
+      reasoning = `Visual Agent calibrated 3D LUT "${lutName}" (${Math.round(intensity * 100)}% intensity) on "${activeClip.name}" with skin tone protection.`;
 
       agentSteps.push(
-        {
-          agentName: "Vision Agent",
-          status: "COMPLETED",
-          action: `Analyzed vectorscope and tonal luminance histogram of "${activeClip.name}".`,
-        },
-        {
-          agentName: "Visual Agent",
-          status: "COMPLETED",
-          action: `Generated 64^3 3D tetrahedral LUT (${lutName}) with Rec.709 gamut clamp.`,
-        },
-        {
-          agentName: "Resolve Agent",
-          status: "COMPLETED",
-          action: `Applied non-destructive GPU shader effect pipeline.`,
-        }
+        { agentName: "Vision Agent", status: "COMPLETED", action: `Analyzed vectorscope and tonal luminance of "${activeClip.name}".` },
+        { agentName: "Visual Agent", status: "COMPLETED", action: `Generated 64^3 3D tetrahedral LUT shader (${lutName}).` },
+        { agentName: "Resolve Agent", status: "COMPLETED", action: "Applied GPU effect shader." }
       );
 
-      updatedWorkflow = createWorkflowForIntent("COLOR", `Color Grade: ${lutName}`, activeClip.name, timeStr, vTrack.id);
-    }
-    // =========================================================================
-    // INTENT 7: AUDIO VOLUME / DUCKING
-    // =========================================================================
-    else if (
-      lowerPrompt.includes("volume") ||
-      lowerPrompt.includes("duck") ||
-      lowerPrompt.includes("mute") ||
-      lowerPrompt.includes("gain") ||
-      lowerPrompt.includes("loud") ||
-      lowerPrompt.includes("boost") ||
-      lowerPrompt.includes("sound") ||
-      lowerPrompt.includes("awaaz") ||
-      lowerPrompt.includes("normalize") ||
-      lowerPrompt.includes("audio")
-    ) {
+      updatedWorkflow = createWorkflowForIntent("COLOR", `Color Grade: ${lutName}`, activeClip.name, timeStr, targetTrackId);
+    } else if (isDeleteIntent && activeClip) {
+      mutations.push({
+        type: "REMOVE_CLIP",
+        trackId: owningTrack.id,
+        clipId: activeClip.id,
+      });
+
+      detailedAction = {
+        targetClipName: activeClip.name,
+        targetClipId: activeClip.id,
+        trackName: targetTrackName,
+        actionType: "DELETE",
+        beforeState: { durationSec: beforeDurationSec, startSec: beforeStartSec, speed: beforeSpeed, scale: beforeScale, rotation: beforeRotation, effectsCount: beforeEffectsCount },
+        afterState: { durationSec: "0.00s", startSec: "0.00s", speed: "1.0x", scale: "1.0x", rotation: "0°", effectsCount: 0 },
+        deltaDescription: `Removed clip "${activeClip.name}" from track "${targetTrackName}" with automatic ripple closure.`,
+      };
+
+      reasoning = `Edit Agent removed "${activeClip.name}" from track "${targetTrackName}" with automatic ripple alignment.`;
+
+      agentSteps.push(
+        { agentName: "Story Agent", status: "COMPLETED", action: `Approved removal of "${activeClip.name}".` },
+        { agentName: "Edit Agent", status: "COMPLETED", action: `Deleted clip from track "${targetTrackName}".` },
+        { agentName: "Resolve Agent", status: "COMPLETED", action: `Committed deletion (Timeline bumped to v${timeline.version + 1}).` }
+      );
+
+      updatedWorkflow = createWorkflowForIntent("DELETE", "Shot Removal", activeClip.name, timeStr, targetTrackId);
+    } else if (isAudioIntent) {
       let targetDb = -14;
       if (lowerPrompt.includes("mute")) {
         targetDb = -60;
@@ -813,38 +790,37 @@ export async function POST(req: Request) {
         volumeDb: targetDb,
       });
 
-      reasoning = `Audio Agent calibrated master loudness bus: Track "${audioTrackToTarget.name}" volume set to ${targetDb > 0 ? `+${targetDb}` : targetDb} dB (EBU R128 compliance).`;
+      detailedAction = {
+        targetClipName: activeClip?.name || "Audio Bus",
+        targetClipId: audioTrackToTarget.id,
+        trackName: audioTrackToTarget.name,
+        actionType: "AUDIO",
+        beforeState: { durationSec: beforeDurationSec, startSec: beforeStartSec, speed: beforeSpeed, scale: beforeScale, rotation: beforeRotation, effectsCount: beforeEffectsCount },
+        afterState: { durationSec: beforeDurationSec, startSec: beforeStartSec, speed: beforeSpeed, scale: beforeScale, rotation: beforeRotation, effectsCount: beforeEffectsCount },
+        deltaDescription: `Audio bus volume set to ${targetDb > 0 ? `+${targetDb}` : targetDb} dB on track "${audioTrackToTarget.name}".`,
+      };
+
+      reasoning = `Audio Agent calibrated loudness on track "${audioTrackToTarget.name}": Volume set to ${targetDb > 0 ? `+${targetDb}` : targetDb} dB (EBU R128 compliance).`;
 
       agentSteps.push(
-        {
-          agentName: "Audio Agent",
-          status: "COMPLETED",
-          action: `Measured integrated loudness and applied sidechain lookahead limiter to track "${audioTrackToTarget.name}".`,
-        },
-        {
-          agentName: "Resolve Agent",
-          status: "COMPLETED",
-          action: `Committed ${targetDb} dB audio bus adjustment.`,
-        }
+        { agentName: "Audio Agent", status: "COMPLETED", action: `Measured integrated loudness on track "${audioTrackToTarget.name}".` },
+        { agentName: "Resolve Agent", status: "COMPLETED", action: `Committed ${targetDb} dB audio bus adjustment.` }
       );
 
       updatedWorkflow = createWorkflowForIntent("AUDIO", "Audio Ducking & Dynamics", activeClip?.name || "Audio", timeStr, audioTrackToTarget.id);
-    }
-    // =========================================================================
-    // INTENT 8: UNIVERSAL FALLBACK
-    // =========================================================================
-    else {
-      if (activeClip && vTrack) {
+    } else {
+      // Universal edit fallback
+      if (activeClip) {
         mutations.push({
           type: "SET_CLIP_TRANSFORM",
-          trackId: vTrack.id,
+          trackId: owningTrack.id,
           clipId: activeClip.id,
           transform: { scale: { x: 1.08, y: 1.08 }, position: { x: 0, y: 0 }, rotation: 0, opacity: 1 },
         });
 
         mutations.push({
           type: "APPLY_CLIP_EFFECT",
-          trackId: vTrack.id,
+          trackId: owningTrack.id,
           clipId: activeClip.id,
           effect: {
             id: `fx_ai_${Date.now()}`,
@@ -873,39 +849,25 @@ export async function POST(req: Request) {
         },
       });
 
-      reasoning = `Executed directive "${cleanPrompt}" across 6 specialized agents: Edit Agent applied dynamic punch-in (1.08x), Visual Agent balanced Kodak 5207 color grade, and Audio Agent calibrated audio loudness.`;
+      detailedAction = {
+        targetClipName: targetClipName,
+        targetClipId: targetClipId,
+        trackName: targetTrackName,
+        actionType: "UNIVERSAL",
+        beforeState: { durationSec: beforeDurationSec, startSec: beforeStartSec, speed: beforeSpeed, scale: beforeScale, rotation: beforeRotation, effectsCount: beforeEffectsCount },
+        afterState: { durationSec: beforeDurationSec, startSec: beforeStartSec, speed: beforeSpeed, scale: "1.08x", rotation: beforeRotation, effectsCount: beforeEffectsCount + 1 },
+        deltaDescription: `Executed directive "${cleanPrompt}" on "${targetClipName}": Applied 1.08x punch-in framing, Kodak 5207 3D LUT, and -10dB background score mix.`,
+      };
+
+      reasoning = `Executed directive "${cleanPrompt}" on "${targetClipName}": Edit Agent applied 1.08x focal punch-in, Visual Agent balanced Kodak 5207 grade, and Audio Agent calibrated mix loudness.`;
 
       agentSteps.push(
-        {
-          agentName: "Vision Agent",
-          status: "COMPLETED",
-          action: `Analyzed composition and focal point for "${targetClipName}".`,
-        },
-        {
-          agentName: "Story Agent",
-          status: "COMPLETED",
-          action: `Validated narrative pacing for directive "${cleanPrompt}".`,
-        },
-        {
-          agentName: "Edit Agent",
-          status: "COMPLETED",
-          action: `Applied 1.08x focal punch-in on track "${vTrack?.name || "V1"}".`,
-        },
-        {
-          agentName: "Visual Agent",
-          status: "COMPLETED",
-          action: "Mapped Kodak 5207 filmic grade with skin tone protection.",
-        },
-        {
-          agentName: "Audio Agent",
-          status: "COMPLETED",
-          action: "Calibrated -10dB background score mix.",
-        },
-        {
-          agentName: "Resolve Agent",
-          status: "COMPLETED",
-          action: `Committed atomic timeline mutation (Timeline v${timeline.version + 1}).`,
-        }
+        { agentName: "Vision Agent", status: "COMPLETED", action: `Analyzed composition for "${targetClipName}".` },
+        { agentName: "Story Agent", status: "COMPLETED", action: `Validated narrative pacing for directive "${cleanPrompt}".` },
+        { agentName: "Edit Agent", status: "COMPLETED", action: `Applied 1.08x focal punch-in on track "${targetTrackName}".` },
+        { agentName: "Visual Agent", status: "COMPLETED", action: "Mapped Kodak 5207 filmic grade." },
+        { agentName: "Audio Agent", status: "COMPLETED", action: "Calibrated -10dB background score mix." },
+        { agentName: "Resolve Agent", status: "COMPLETED", action: `Committed atomic timeline mutation (Timeline v${timeline.version + 1}).` }
       );
 
       updatedWorkflow = createWorkflowForIntent("UNIVERSAL", `AI Directive: ${cleanPrompt.slice(0, 20)}`, targetClipName, timeStr, targetTrackId);
@@ -919,6 +881,7 @@ export async function POST(req: Request) {
       updatedWorkflow,
       generatedScript,
       thinkingTrace,
+      detailedAction,
       currentTimestampContext: timeStr,
       targetClipContext: activeClip?.name,
       agentSteps,

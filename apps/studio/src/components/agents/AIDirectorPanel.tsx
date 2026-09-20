@@ -24,8 +24,11 @@ import {
   Clock,
   RefreshCw,
   Cpu,
+  Target,
+  Layers2,
+  Zap,
 } from "lucide-react";
-import { TimelineIR } from "@aetheredit/timeline-ir";
+import { TimelineIR, TimelineClip } from "@aetheredit/timeline-ir";
 import { MediaAsset } from "@/lib/sample-data";
 import { AgentRun } from "@/packages/agent-runtime/src/types";
 import { computeTimelineDiff } from "@/lib/timeline-diff";
@@ -42,6 +45,30 @@ export interface AgentThinkingStep {
   thought: string;
   action: string;
   timestampMs: number;
+}
+
+export interface DetailedActionInfo {
+  targetClipName: string;
+  targetClipId: string;
+  trackName: string;
+  actionType: "SPLIT" | "TRIM" | "SPEED" | "TRANSFORM" | "COLOR" | "DELETE" | "AUDIO" | "REEL" | "SCRIPT" | "UNIVERSAL";
+  beforeState: {
+    durationSec: string;
+    startSec: string;
+    speed: string;
+    scale: string;
+    rotation: string;
+    effectsCount: number;
+  };
+  afterState: {
+    durationSec: string;
+    startSec: string;
+    speed: string;
+    scale: string;
+    rotation: string;
+    effectsCount: number;
+  };
+  deltaDescription: string;
 }
 
 export interface ScriptScene {
@@ -78,6 +105,7 @@ export interface ActiveAiRunInfo {
   agentSteps?: AgentExecutionStep[];
   generatedScript?: VideoScript;
   thinkingTrace?: AgentThinkingStep[];
+  detailedAction?: DetailedActionInfo;
 }
 
 interface AIDirectorPanelProps {
@@ -203,6 +231,30 @@ export const AIDirectorPanel: React.FC<AIDirectorPanelProps> = ({
   const secs = Math.floor(totalSec % 60);
   const formattedDuration = `${mins}m ${String(secs).padStart(2, "0")}s`;
 
+  // Find targeted clip currently under playhead or selected
+  let currentTargetClip: TimelineClip | undefined;
+  if (selectedClipName) {
+    for (const t of timeline.tracks) {
+      const found = t.clips.find((c) => c.name === selectedClipName || c.id === selectedClipName);
+      if (found) {
+        currentTargetClip = found;
+        break;
+      }
+    }
+  }
+  if (!currentTargetClip) {
+    for (const t of timeline.tracks) {
+      const found = t.clips.find((c) => currentFrame >= c.timelineRange.start && currentFrame < c.timelineRange.start + c.timelineRange.duration);
+      if (found) {
+        currentTargetClip = found;
+        break;
+      }
+    }
+  }
+  if (!currentTargetClip && timeline.tracks[0]?.clips.length > 0) {
+    currentTargetClip = timeline.tracks[0].clips[0];
+  }
+
   // Compute real dynamic diff if previous timeline exists
   const diffResult = React.useMemo(
     () => computeTimelineDiff(timelineBefore || null, timeline),
@@ -213,18 +265,18 @@ export const AIDirectorPanel: React.FC<AIDirectorPanelProps> = ({
   const speedCount = diffResult.changes.filter((c) => c.category === "SPEED").length;
   const colorCount = diffResult.changes.filter((c) => c.category === "COLOR").length;
   const audioCount = diffResult.changes.filter((c) => c.category === "AUDIO").length;
-  const otherCount = diffResult.changes.filter((c) => !["CUT", "RIPPLE", "SPEED", "COLOR", "AUDIO"].includes(c.category)).length;
 
   const quickActionChips = [
     "Split clip at playhead",
     "Trim start by 1s",
+    "Trim tail by 1s",
     "Speed up by 2x",
+    "Slow motion 0.5x",
     "Reframe 9:16 vertical",
+    "Add Kodak 5207 film grade",
     "Write a 12s travel vlog script",
     "This shot is boring. Replace it with a better one.",
-    "Make a cinematic 60s travel reel",
     "Make this scene more dramatic",
-    "Add warm filmic 3D LUT",
     "Cut dead air & duck audio",
     "Delete selected clip",
   ];
@@ -265,6 +317,8 @@ export const AIDirectorPanel: React.FC<AIDirectorPanelProps> = ({
     setCurrentScript(updated);
   };
 
+  const dAction = activeAiRun?.detailedAction;
+
   return (
     <div
       style={{
@@ -289,7 +343,7 @@ export const AIDirectorPanel: React.FC<AIDirectorPanelProps> = ({
         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
           <Sparkles size={16} style={{ color: "var(--accent)" }} />
           <span style={{ fontSize: "14px", fontWeight: 700, letterSpacing: "-0.2px" }}>
-            AI Director & Scriptwriter
+            AI Director & Editor
           </span>
         </div>
 
@@ -299,6 +353,42 @@ export const AIDirectorPanel: React.FC<AIDirectorPanelProps> = ({
             {isThinking ? "Thinking & Editing..." : "AI Ready"}
           </span>
         </div>
+      </div>
+
+      {/* Target Clip Status Strip */}
+      <div
+        style={{
+          padding: "8px 16px",
+          background: "var(--bg-subtle)",
+          borderBottom: "1px solid var(--border)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          fontSize: "11px",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: "6px", minWidth: 0 }}>
+          <Target size={13} style={{ color: "var(--accent)", flexShrink: 0 }} />
+          <span style={{ fontWeight: 600, color: "var(--text-secondary)", flexShrink: 0 }}>Target:</span>
+          <span
+            style={{
+              fontWeight: 700,
+              color: "var(--text-primary)",
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+            }}
+            title={currentTargetClip?.name || "None"}
+          >
+            {currentTargetClip?.name || "Timeline Track"}
+          </span>
+        </div>
+
+        {currentTargetClip && (
+          <span style={{ fontFamily: "monospace", color: "var(--text-muted)", flexShrink: 0 }}>
+            {((currentTargetClip.timelineRange.duration) / fps).toFixed(1)}s • {currentTargetClip.speed || 1.0}x
+          </span>
+        )}
       </div>
 
       {/* Mode Tabs: Directives vs Script & Storyboard */}
@@ -381,15 +471,15 @@ export const AIDirectorPanel: React.FC<AIDirectorPanelProps> = ({
           <div style={{ display: "flex", flexDirection: "column", gap: "4px", fontSize: "11px", color: "var(--text-secondary)" }}>
             <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
               <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: "var(--accent)" }} />
-              <span>Analyzing timeline clips & creative story brief...</span>
+              <span>Analyzing target clip & resolving exact timeline coordinates...</span>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
               <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: "var(--accent)" }} />
-              <span>Computing blade cut timestamps & spoken voiceover script...</span>
+              <span>Computing frame-accurate blade cut / trim / transform parameters...</span>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
               <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: "var(--accent)" }} />
-              <span>Applying 3D LUT Kodak 5207 grade & -14dB audio ducking...</span>
+              <span>Committing non-destructive mutations to Timeline IR...</span>
             </div>
           </div>
         </div>
@@ -400,62 +490,68 @@ export const AIDirectorPanel: React.FC<AIDirectorPanelProps> = ({
       {/* ===================================================================== */}
       {panelTab === "DIRECTIVES" && (
         <div style={{ padding: "16px", display: "flex", flexDirection: "column", gap: "14px", flex: 1 }}>
-          {/* Project Context & Creative Brief */}
-          <div
-            style={{
-              background: "var(--bg-subtle)",
-              border: "1px solid var(--border)",
-              borderRadius: "var(--radius-md)",
-              padding: "12px 14px",
-              display: "flex",
-              flexDirection: "column",
-              gap: "8px",
-            }}
-          >
-            <div>
-              <span style={{ fontSize: "11px", fontWeight: 700, textTransform: "uppercase", color: "var(--text-muted)", letterSpacing: "0.5px" }}>
-                Project Context
-              </span>
-              <p style={{ fontSize: "12px", color: "var(--text-primary)", fontWeight: 500, marginTop: "2px" }}>
-                {formattedDuration} • {clipCount} clips • {assets.length} footage items • {timeline.tracks.length} tracks
-              </p>
-            </div>
-
-            <div style={{ height: "1px", background: "var(--border)" }} />
-
-            <div>
+          {/* DETAILED ACTION CARD (If available) */}
+          {dAction && (
+            <div
+              style={{
+                background: "rgba(79, 115, 247, 0.06)",
+                border: "1px solid var(--accent-border)",
+                borderRadius: "var(--radius-md)",
+                padding: "12px 14px",
+                display: "flex",
+                flexDirection: "column",
+                gap: "10px",
+              }}
+            >
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <span style={{ fontSize: "11px", fontWeight: 700, textTransform: "uppercase", color: "var(--text-muted)", letterSpacing: "0.5px" }}>
-                  Creative Brief
+                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                  <Zap size={14} style={{ color: "var(--accent)" }} />
+                  <span style={{ fontSize: "12px", fontWeight: 700, color: "var(--accent)" }}>
+                    Action: {dAction.actionType}
+                  </span>
+                </div>
+                <span style={{ fontSize: "10px", background: "var(--bg-surface)", border: "1px solid var(--border)", padding: "2px 6px", borderRadius: "4px", color: "var(--text-secondary)", fontWeight: 600 }}>
+                  {dAction.trackName}
                 </span>
-                <button
-                  onClick={() => {
-                    if (isEditingBrief) handleSaveBrief();
-                    else setIsEditingBrief(true);
-                  }}
-                  style={{ background: "transparent", border: "none", color: "var(--accent)", fontSize: "11px", cursor: "pointer", fontWeight: 600, display: "flex", alignItems: "center", gap: "2px" }}
-                >
-                  <Edit3 size={11} />
-                  <span>{isEditingBrief ? "Done" : "Edit"}</span>
-                </button>
               </div>
 
-              {isEditingBrief ? (
-                <textarea
-                  value={briefDraft}
-                  onChange={(e) => setBriefDraft(e.target.value)}
-                  onBlur={handleSaveBrief}
-                  rows={2}
-                  className="control-input"
-                  style={{ marginTop: "6px", fontSize: "12px", resize: "none" }}
-                />
-              ) : (
-                <p style={{ fontSize: "12px", color: "var(--text-secondary)", marginTop: "3px", fontStyle: "italic" }}>
-                  &ldquo;{creativeBrief}&rdquo;
-                </p>
-              )}
+              <p style={{ fontSize: "12px", color: "var(--text-primary)", margin: 0, lineHeight: 1.4, fontWeight: 500 }}>
+                {dAction.deltaDescription}
+              </p>
+
+              {/* Comparative Before vs After Metric Strip */}
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: "8px",
+                  background: "var(--bg-surface)",
+                  padding: "8px 10px",
+                  borderRadius: "var(--radius-sm)",
+                  border: "1px solid var(--border)",
+                  fontSize: "11px",
+                }}
+              >
+                <div>
+                  <span style={{ color: "var(--text-muted)", fontSize: "10px", textTransform: "uppercase", fontWeight: 700, display: "block" }}>
+                    Before Edit
+                  </span>
+                  <span style={{ color: "var(--text-secondary)", fontWeight: 600 }}>
+                    {dAction.beforeState.durationSec} • {dAction.beforeState.speed} • {dAction.beforeState.scale}
+                  </span>
+                </div>
+
+                <div>
+                  <span style={{ color: "var(--success)", fontSize: "10px", textTransform: "uppercase", fontWeight: 700, display: "block" }}>
+                    After Edit
+                  </span>
+                  <span style={{ color: "var(--text-primary)", fontWeight: 700 }}>
+                    {dAction.afterState.durationSec} • {dAction.afterState.speed} • {dAction.afterState.scale}
+                  </span>
+                </div>
+              </div>
             </div>
-          </div>
+          )}
 
           {/* 6-Agent Execution Pipeline Trace */}
           <div
@@ -471,7 +567,7 @@ export const AIDirectorPanel: React.FC<AIDirectorPanelProps> = ({
           >
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <span style={{ fontSize: "11px", fontWeight: 700, textTransform: "uppercase", color: "var(--text-muted)", letterSpacing: "0.5px" }}>
-                Agent Execution Pipeline Trace
+                Multi-Agent Telemetry Trace
               </span>
               <span style={{ fontSize: "11px", color: "var(--text-secondary)", fontFamily: "monospace" }}>
                 Timeline v{timeline.version}
@@ -489,7 +585,7 @@ export const AIDirectorPanel: React.FC<AIDirectorPanelProps> = ({
                     </span>
                   </div>
 
-                  <p style={{ fontSize: "12px", color: "var(--text-primary)", lineHeight: "1.4", background: "var(--bg-subtle)", padding: "8px 10px", borderRadius: "var(--radius-sm)", border: "1px solid var(--border)" }}>
+                  <p style={{ fontSize: "12px", color: "var(--text-primary)", lineHeight: "1.4", background: "var(--bg-subtle)", padding: "8px 10px", borderRadius: "var(--radius-sm)", border: "1px solid var(--border)", margin: 0 }}>
                     {activeAiRun.reasoning}
                   </p>
 
@@ -523,7 +619,7 @@ export const AIDirectorPanel: React.FC<AIDirectorPanelProps> = ({
                 </>
               ) : (
                 <div style={{ color: "var(--text-muted)", fontStyle: "italic", fontSize: "12px" }}>
-                  Ready for editing directives. Type below or pick a quick action.
+                  Ready for editing directives. Target a clip and type below or pick a quick action.
                 </div>
               )}
             </div>
@@ -544,7 +640,7 @@ export const AIDirectorPanel: React.FC<AIDirectorPanelProps> = ({
             >
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                 <span style={{ fontSize: "12px", fontWeight: 700, color: "var(--success)" }}>
-                  ✓ AI Mutations Applied ({diffResult.changes.length} changes)
+                  ✓ Timeline Updated ({diffResult.changes.length} changes)
                 </span>
                 <span style={{ fontSize: "11px", color: "var(--text-secondary)" }}>
                   {cutCount > 0 && `${cutCount} cuts `}

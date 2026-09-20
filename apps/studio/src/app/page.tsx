@@ -26,6 +26,7 @@ import {
   TimelineClip,
   TimelineHistoryManager,
   TimelineMutationOp,
+  TimelineMutator,
   TrackType,
 } from "@aetheredit/timeline-ir";
 import {
@@ -1212,6 +1213,7 @@ export default function StudioPage() {
   const handleAiDirective = async (prompt: string, customScript?: any) => {
     setIsAiThinking(true);
     try {
+      const targetTrackId = timeline.tracks.find((t) => t.clips.some((c) => c.id === selectedClip?.id))?.id;
       const res = await fetch("/api/ai", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1221,6 +1223,9 @@ export default function StudioPage() {
           workflow,
           policy: modelPolicy,
           currentFrame,
+          selectedClipId: selectedClip?.id,
+          selectedClipName: selectedClip?.name,
+          selectedTrackId: targetTrackId,
           assets: assets.map((a) => ({ id: a.id, title: a.title, durationFrames: a.durationFrames })),
           customScript,
         }),
@@ -1236,15 +1241,26 @@ export default function StudioPage() {
           let updated = timeline;
           for (const mut of data.proposedMutations) {
             try {
-              updated = historyRef.current.pushMutation(mut);
+              updated = TimelineMutator.apply(updated, mut);
             } catch (mutErr) {
               console.warn("Skipping unexecutable AI mutation:", mut, mutErr);
             }
           }
+          historyRef.current.pushSnapshot(updated, `AI Edit: ${prompt}`);
           setTimeline(updated);
           browserCache.set("active_timeline", updated);
           updateHistoryState();
           setHasPendingAiChanges(true);
+
+          // Update active selected clip if modified
+          if (selectedClip) {
+            const freshTrack = updated.tracks.find((t) => t.clips.some((c) => c.id === selectedClip.id || c.id.startsWith(selectedClip.id)));
+            const freshClip = freshTrack?.clips.find((c) => c.id === selectedClip.id || c.id.startsWith(selectedClip.id)) || null;
+            if (freshClip) {
+              setSelectedClip(freshClip);
+              selectedClipRef.current = freshClip;
+            }
+          }
         }
         setActiveAiRun({
           agentName: data.agentName || "AI Director",
@@ -1257,6 +1273,7 @@ export default function StudioPage() {
           agentSteps: data.agentSteps,
           generatedScript: data.generatedScript,
           thinkingTrace: data.thinkingTrace,
+          detailedAction: data.detailedAction,
         });
       }
     } catch (err) {
