@@ -1,0 +1,32 @@
+{
+  "renderId": "rnd_1789880497471",
+  "projectId": "proj_prod_001",
+  "timelineVersion": 2,
+  "workflowVersion": 1,
+  "compilerVersion": "1.0.0",
+  "rendererVersion": "FFmpeg 8.1.1 (VideoToolbox)",
+  "sourceHashes": {
+    "ast_speech": "sha256_mock_source_hash_89f7"
+  },
+  "settings": {
+    "codec": "h264_videotoolbox",
+    "resolution": {
+      "width": 1080,
+      "height": 1920
+    },
+    "fps": 30,
+    "audio": {
+      "sampleRate": 48000,
+      "channels": 2,
+      "targetLufs": -23
+    }
+  },
+  "hardwareCapabilities": {
+    "decode": "VideoToolbox (Hardware Dec)",
+    "filters": "CPU (Optimized SIMD NEON)",
+    "composite": "CPU / Canvas2D",
+    "encode": "h264_videotoolbox (Hardware Enc)"
+  },
+  "timestamp": 1789880497471,
+  "reproducibilityHash": "df03092a6dff73132d209f882ad68134f9dea6dce991aa809665578bb5eab359"
+}

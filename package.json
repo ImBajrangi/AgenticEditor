@@ -1,0 +1,22 @@
+{
+  "name": "aetheredit-os",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Production-Grade Agentic AI Video Production Platform",
+  "scripts": {
+    "dev": "npm --prefix apps/studio run dev",
+    "build": "npm --prefix apps/studio run build",
+    "start": "npm --prefix apps/studio run start",
+    "test": "npx -y tsx tests/e2e-engine.test.mjs && npx -y tsx tests/agent-e2e-real.test.mjs && npx -y tsx tests/ui-behavioral.test.mjs && npx -y tsx tests/forensic-audit.test.mjs && npx -y tsx tests/agent-intelligence.test.mjs"
+  },
+  "keywords": [
+    "video-editor",
+    "nle",
+    "ai-agent",
+    "ffmpeg",
+    "workflow-engine",
+    "timeline-ir"
+  ],
+  "author": "AetherEdit Team",
+  "license": "Apache-2.0"
+}

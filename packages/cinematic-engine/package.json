@@ -1,0 +1,10 @@
+{
+  "name": "@aetheredit/cinematic-engine",
+  "version": "0.1.0",
+  "description": "Professional cinematic intelligence: pacing curves, J/L cuts, dead-air removal, and 9:16 reframing",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "dependencies": {
+    "@aetheredit/timeline-ir": "0.1.0"
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "baseUrl": ".",
+    "paths": {
+      "@aetheredit/timeline-ir": ["./apps/studio/src/packages/timeline-ir/src/index.ts"],
+      "@aetheredit/workflow-engine": ["./apps/studio/src/packages/workflow-engine/src/index.ts"],
+      "@aetheredit/ai-gateway": ["./apps/studio/src/packages/ai-gateway/src/index.ts"],
+      "@aetheredit/render-compiler": ["./apps/studio/src/packages/render-compiler/src/index.ts"],
+      "@aetheredit/cinematic-engine": ["./apps/studio/src/packages/cinematic-engine/src/index.ts"],
+      "@aetheredit/agent-runtime": ["./apps/studio/src/packages/agent-runtime/src/index.ts"]
+    }
+  },
+  "include": ["packages/**/*", "tests/**/*"]
+}

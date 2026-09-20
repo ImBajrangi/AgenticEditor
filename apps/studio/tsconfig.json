@@ -1,0 +1,40 @@
+{
+  "compilerOptions": {
+    "target": "ES2017",
+    "lib": ["dom", "dom.iterable", "esnext"],
+    "allowJs": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "react-jsx",
+    "incremental": true,
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ],
+    "paths": {
+      "@/*": ["./src/*"],
+      "@aetheredit/timeline-ir": ["./src/packages/timeline-ir/src/index.ts"],
+      "@aetheredit/workflow-engine": ["./src/packages/workflow-engine/src/index.ts"],
+      "@aetheredit/ai-gateway": ["./src/packages/ai-gateway/src/index.ts"],
+      "@aetheredit/render-compiler": ["./src/packages/render-compiler/src/index.ts"],
+      "@aetheredit/cinematic-engine": ["./src/packages/cinematic-engine/src/index.ts"],
+      "@aetheredit/agent-runtime": ["./src/packages/agent-runtime/src/index.ts"]
+    }
+  },
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    ".next/types/**/*.ts",
+    ".next/dev/types/**/*.ts",
+    "**/*.mts"
+  ],
+  "exclude": ["node_modules"]
+}

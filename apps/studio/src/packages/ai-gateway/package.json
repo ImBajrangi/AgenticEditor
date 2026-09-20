@@ -1,0 +1,10 @@
+{
+  "name": "@aetheredit/ai-gateway",
+  "version": "0.1.0",
+  "description": "Unified provider-neutral AI gateway with Gemini, local vLLM/Ollama, and policy routing",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "dependencies": {
+    "zod": "^3.23.8"
+  }
+}
