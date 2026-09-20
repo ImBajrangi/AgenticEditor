@@ -1,27 +1,20 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import {
   Sparkles,
   Send,
   CheckCircle2,
-  XCircle,
-  HelpCircle,
-  ArrowRight,
   TrendingUp,
-  Sliders,
-  Film,
-  Music,
-  Maximize2,
   Workflow,
-  Check,
   RotateCcw,
   Zap,
-  Info,
   ChevronDown,
   ChevronUp,
-  Scissors,
-  Layers,
+  Sliders,
+  Check,
+  Film,
+  Play,
 } from "lucide-react";
 import { AgentRun } from "@/packages/agent-runtime/src/types";
 
@@ -101,65 +94,81 @@ export const AiDirectorCenterPanel: React.FC<AiDirectorCenterPanelProps> = ({
         flexDirection: "column",
         height: "100%",
         width: "100%",
-        background: "var(--bg-surface)",
-        borderRight: "1px solid var(--border)",
+        background: "#0F121B",
+        color: "#F8FAFC",
+        borderRight: "1px solid rgba(255, 255, 255, 0.08)",
         overflowY: "auto",
-        padding: "18px 24px",
-        gap: "18px",
+        padding: "16px 20px",
+        gap: "14px",
       }}
     >
-      {/* 1. Header & Creative Prompt Box */}
+      {/* 1. Header & Creative Prompt Box (Obsidian Glass Card) */}
       <div
         style={{
-          background: "linear-gradient(135deg, rgba(79, 115, 247, 0.04) 0%, rgba(255, 255, 255, 0.9) 100%)",
-          border: "1px solid var(--accent-border)",
+          background: "rgba(22, 27, 40, 0.8)",
+          border: "1px solid rgba(99, 102, 241, 0.3)",
           borderRadius: "var(--radius-lg)",
-          padding: "16px 18px",
+          padding: "14px 16px",
           display: "flex",
           flexDirection: "column",
-          gap: "12px",
-          boxShadow: "var(--shadow-sm)",
+          gap: "10px",
+          boxShadow: "0 8px 24px rgba(0, 0, 0, 0.4)",
+          position: "relative",
+          overflow: "hidden",
         }}
       >
+        {/* Subtle ambient accent glow */}
+        <div
+          style={{
+            position: "absolute",
+            top: "-40px",
+            right: "-40px",
+            width: "120px",
+            height: "120px",
+            borderRadius: "50%",
+            background: "radial-gradient(circle, rgba(99, 102, 241, 0.25) 0%, transparent 70%)",
+            pointerEvents: "none",
+          }}
+        />
+
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
             <div
               style={{
-                width: "26px",
-                height: "26px",
+                width: "24px",
+                height: "24px",
                 borderRadius: "6px",
-                background: "var(--accent)",
+                background: "linear-gradient(135deg, #6366F1 0%, #4F46E5 100%)",
                 color: "#FFFFFF",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
+                boxShadow: "0 0 10px rgba(99, 102, 241, 0.5)",
               }}
             >
-              <Sparkles size={15} />
+              <Sparkles size={13} />
             </div>
-            <span style={{ fontSize: "14px", fontWeight: 700, color: "var(--text-primary)" }}>
+            <span style={{ fontSize: "13px", fontWeight: 700, color: "#FFFFFF", letterSpacing: "0.2px" }}>
               What should we make?
             </span>
           </div>
 
-          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-            <button
-              onClick={onToggleAspectRatio}
-              style={{
-                background: "var(--bg-subtle)",
-                border: "1px solid var(--border)",
-                borderRadius: "var(--radius-sm)",
-                padding: "3px 8px",
-                fontSize: "11px",
-                fontWeight: 600,
-                color: "var(--text-secondary)",
-                cursor: "pointer",
-              }}
-              title="Toggle Aspect Ratio"
-            >
-              Format: {aspectRatio}
-            </button>
-          </div>
+          <button
+            onClick={onToggleAspectRatio}
+            style={{
+              background: "rgba(255, 255, 255, 0.06)",
+              border: "1px solid rgba(255, 255, 255, 0.12)",
+              borderRadius: "4px",
+              padding: "2px 8px",
+              fontSize: "11px",
+              fontWeight: 600,
+              color: "#94A3B8",
+              cursor: "pointer",
+            }}
+            title="Toggle Format"
+          >
+            Format: {aspectRatio}
+          </button>
         </div>
 
         {/* Prompt Input */}
@@ -170,37 +179,38 @@ export const AiDirectorCenterPanel: React.FC<AiDirectorCenterPanelProps> = ({
             rows={2}
             style={{
               width: "100%",
-              padding: "10px 12px",
-              fontSize: "13px",
+              padding: "8px 12px",
+              fontSize: "12px",
               lineHeight: "1.4",
-              background: "#FFFFFF",
-              border: "1px solid var(--border-strong)",
-              borderRadius: "var(--radius-md)",
-              color: "var(--text-primary)",
+              background: "rgba(11, 14, 21, 0.85)",
+              border: "1px solid rgba(255, 255, 255, 0.12)",
+              borderRadius: "8px",
+              color: "#FFFFFF",
               resize: "none",
               outline: "none",
               fontFamily: "inherit",
+              boxShadow: "inset 0 1px 3px rgba(0, 0, 0, 0.5)",
             }}
             placeholder="Describe your vision (e.g. 45s travel teaser, high energy, focus on coastal surf moments)..."
           />
         </div>
 
-        {/* Chips + Direct Button */}
+        {/* Chips + Direct Action Button */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "8px" }}>
-          <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+          <div style={{ display: "flex", gap: "5px", flexWrap: "wrap" }}>
             {presetChips.map((chip) => (
               <button
                 key={chip}
                 onClick={() => handlePresetClick(chip)}
                 style={{
-                  background: "var(--bg-surface)",
-                  border: "1px solid var(--border)",
-                  borderRadius: "14px",
-                  padding: "4px 10px",
-                  fontSize: "11px",
-                  color: "var(--text-secondary)",
+                  background: "rgba(255, 255, 255, 0.05)",
+                  border: "1px solid rgba(255, 255, 255, 0.1)",
+                  borderRadius: "12px",
+                  padding: "3px 9px",
+                  fontSize: "10px",
+                  color: "#94A3B8",
                   cursor: "pointer",
-                  transition: "all 0.1s ease",
+                  transition: "all 0.12s ease",
                 }}
               >
                 {chip}
@@ -215,20 +225,20 @@ export const AiDirectorCenterPanel: React.FC<AiDirectorCenterPanelProps> = ({
               display: "flex",
               alignItems: "center",
               gap: "6px",
-              background: "linear-gradient(135deg, #4F73F7 0%, #3B82F6 100%)",
+              background: "linear-gradient(135deg, #6366F1 0%, #4F46E5 100%)",
               color: "#FFFFFF",
               border: "none",
-              borderRadius: "var(--radius-md)",
-              padding: "8px 20px",
-              fontSize: "13px",
+              borderRadius: "6px",
+              padding: "7px 18px",
+              fontSize: "12px",
               fontWeight: 700,
               letterSpacing: "0.5px",
               cursor: isThinking ? "not-allowed" : "pointer",
-              boxShadow: "0 4px 12px rgba(79, 115, 247, 0.35)",
+              boxShadow: "0 0 16px rgba(99, 102, 241, 0.4)",
               transition: "all 0.15s ease",
             }}
           >
-            <Sparkles size={14} />
+            <Sparkles size={13} />
             <span>{isThinking ? "DIRECTING..." : "DIRECT"}</span>
           </button>
         </div>
@@ -237,24 +247,22 @@ export const AiDirectorCenterPanel: React.FC<AiDirectorCenterPanelProps> = ({
       {/* 2. AI Status & Pipeline Progress */}
       <div
         style={{
-          background: "var(--bg-subtle)",
-          border: "1px solid var(--border)",
+          background: "rgba(22, 27, 40, 0.6)",
+          border: "1px solid rgba(255, 255, 255, 0.08)",
           borderRadius: "var(--radius-md)",
-          padding: "14px 16px",
+          padding: "12px 14px",
           display: "flex",
           flexDirection: "column",
-          gap: "10px",
+          gap: "8px",
         }}
       >
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-            <span style={{ fontSize: "11px", fontWeight: 700, textTransform: "uppercase", color: "var(--text-secondary)", letterSpacing: "0.5px" }}>
-              AI Director Status
-            </span>
-          </div>
+          <span style={{ fontSize: "10px", fontWeight: 700, textTransform: "uppercase", color: "#94A3B8", letterSpacing: "0.5px" }}>
+            AI Director Pipeline
+          </span>
 
           <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <span style={{ fontSize: "11px", fontWeight: 700, color: "var(--accent)" }}>
+            <span style={{ fontSize: "11px", fontWeight: 700, color: "#38BDF8" }}>
               82% Complete
             </span>
             {onOpenWorkflowGraph && (
@@ -263,8 +271,8 @@ export const AiDirectorCenterPanel: React.FC<AiDirectorCenterPanelProps> = ({
                 style={{
                   background: "transparent",
                   border: "none",
-                  color: "var(--text-secondary)",
-                  fontSize: "11px",
+                  color: "#94A3B8",
+                  fontSize: "10px",
                   cursor: "pointer",
                   display: "flex",
                   alignItems: "center",
@@ -280,74 +288,76 @@ export const AiDirectorCenterPanel: React.FC<AiDirectorCenterPanelProps> = ({
         </div>
 
         {/* Pipeline Step Indicators */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: "11px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "4px", color: "var(--success)", fontWeight: 600 }}>
-            <span style={{ width: "7px", height: "7px", borderRadius: "50%", background: "var(--success)" }} />
-            <span>Understanding footage</span>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: "10px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "4px", color: "#10B981", fontWeight: 600 }}>
+            <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: "#10B981", boxShadow: "0 0 6px #10B981" }} />
+            <span>Understanding</span>
           </div>
-          <div style={{ color: "var(--text-muted)" }}>→</div>
-          <div style={{ display: "flex", alignItems: "center", gap: "4px", color: "var(--accent)", fontWeight: 600 }}>
-            <span style={{ width: "7px", height: "7px", borderRadius: "50%", background: "var(--accent)" }} />
-            <span>Building story</span>
+          <div style={{ color: "#475569" }}>→</div>
+          <div style={{ display: "flex", alignItems: "center", gap: "4px", color: "#6366F1", fontWeight: 600 }}>
+            <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: "#6366F1", boxShadow: "0 0 6px #6366F1" }} />
+            <span>Story Engine</span>
           </div>
-          <div style={{ color: "var(--text-muted)" }}>→</div>
-          <div style={{ display: "flex", alignItems: "center", gap: "4px", color: "var(--text-muted)" }}>
-            <span style={{ width: "7px", height: "7px", borderRadius: "50%", border: "1px solid var(--text-muted)" }} />
-            <span>Audio polish</span>
+          <div style={{ color: "#475569" }}>→</div>
+          <div style={{ display: "flex", alignItems: "center", gap: "4px", color: "#64748B" }}>
+            <span style={{ width: "6px", height: "6px", borderRadius: "50%", border: "1px solid #64748B" }} />
+            <span>Audio DSP</span>
           </div>
-          <div style={{ color: "var(--text-muted)" }}>→</div>
-          <div style={{ display: "flex", alignItems: "center", gap: "4px", color: "var(--text-muted)" }}>
-            <span style={{ width: "7px", height: "7px", borderRadius: "50%", border: "1px solid var(--text-muted)" }} />
-            <span>Final review</span>
+          <div style={{ color: "#475569" }}>→</div>
+          <div style={{ display: "flex", alignItems: "center", gap: "4px", color: "#64748B" }}>
+            <span style={{ width: "6px", height: "6px", borderRadius: "50%", border: "1px solid #64748B" }} />
+            <span>Final Review</span>
           </div>
         </div>
 
         {/* Progress Bar */}
-        <div style={{ width: "100%", height: "5px", background: "var(--border)", borderRadius: "3px", overflow: "hidden" }}>
+        <div style={{ width: "100%", height: "4px", background: "rgba(255, 255, 255, 0.08)", borderRadius: "2px", overflow: "hidden" }}>
           <div
             style={{
               width: isThinking ? "95%" : "82%",
               height: "100%",
-              background: "linear-gradient(90deg, #4F73F7 0%, #10B981 100%)",
+              background: "linear-gradient(90deg, #6366F1 0%, #10B981 100%)",
+              boxShadow: "0 0 8px rgba(99, 102, 241, 0.6)",
               transition: "width 0.3s ease",
             }}
           />
         </div>
 
-        {/* Compact Activity Stream */}
+        {/* Compact Terminal Activity Stream */}
         <div
           style={{
-            background: "#FFFFFF",
-            border: "1px solid var(--border)",
-            borderRadius: "var(--radius-sm)",
-            padding: "8px 10px",
-            fontSize: "11px",
-            color: "var(--text-secondary)",
+            background: "rgba(11, 14, 21, 0.75)",
+            border: "1px solid rgba(255, 255, 255, 0.06)",
+            borderRadius: "4px",
+            padding: "6px 8px",
+            fontSize: "10px",
+            color: "#94A3B8",
             display: "flex",
             flexDirection: "column",
-            gap: "4px",
-            maxHeight: "85px",
+            gap: "3px",
+            maxHeight: "70px",
             overflowY: "auto",
+            fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, monospace",
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-            <span style={{ color: "var(--success)" }}>●</span>
+            <span style={{ color: "#10B981" }}>●</span>
             <span>Analyzed 84 clips across media bins</span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-            <span style={{ color: "var(--success)" }}>●</span>
+            <span style={{ color: "#10B981" }}>●</span>
             <span>Identified 17 usable cinematic moments</span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-            <span style={{ color: "var(--danger)" }}>●</span>
+            <span style={{ color: "#EF4444" }}>●</span>
             <span>Rejected 6 redundant shots</span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-            <span style={{ color: "var(--accent)" }}>●</span>
-            <span>Built 3 narrative arc options → Selected Option B</span>
+            <span style={{ color: "#6366F1" }}>●</span>
+            <span>Selected Story Option B: Cinematic Journey Arc</span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-            <span style={{ color: "var(--warning)" }}>●</span>
+            <span style={{ color: "#F59E0B" }}>●</span>
             <span>Cut dead air: 4.8s • Sidechain audio ducked</span>
           </div>
         </div>
@@ -356,31 +366,29 @@ export const AiDirectorCenterPanel: React.FC<AiDirectorCenterPanelProps> = ({
       {/* 3. CURRENT DECISION CARD (Decision Transparency) */}
       <div
         style={{
-          background: "#FFFFFF",
-          border: decisionAccepted ? "1px solid var(--success)" : "1px solid var(--border-strong)",
-          borderRadius: "var(--radius-lg)",
-          padding: "16px",
+          background: "rgba(22, 27, 40, 0.8)",
+          border: decisionAccepted ? "1px solid rgba(16, 185, 129, 0.4)" : "1px solid rgba(99, 102, 241, 0.35)",
+          borderRadius: "var(--radius-md)",
+          padding: "12px 14px",
           display: "flex",
           flexDirection: "column",
-          gap: "12px",
-          boxShadow: "var(--shadow-sm)",
+          gap: "8px",
+          boxShadow: "0 4px 16px rgba(0, 0, 0, 0.3)",
         }}
       >
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-            <span style={{ fontSize: "11px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px", color: "var(--accent)" }}>
-              CURRENT DECISION
-            </span>
-          </div>
+          <span style={{ fontSize: "10px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px", color: "#818CF8" }}>
+            CURRENT DECISION
+          </span>
 
           <span
             style={{
-              fontSize: "11px",
+              fontSize: "10px",
               fontWeight: 700,
-              padding: "2px 8px",
+              padding: "1px 6px",
               borderRadius: "4px",
-              background: decisionAccepted ? "rgba(16, 185, 129, 0.1)" : "rgba(79, 115, 247, 0.1)",
-              color: decisionAccepted ? "var(--success)" : "var(--accent)",
+              background: decisionAccepted ? "rgba(16, 185, 129, 0.2)" : "rgba(99, 102, 241, 0.2)",
+              color: decisionAccepted ? "#34D399" : "#A5B4FC",
             }}
           >
             {decisionAccepted ? "APPROVED" : "CONFIDENCE: 91%"}
@@ -388,45 +396,45 @@ export const AiDirectorCenterPanel: React.FC<AiDirectorCenterPanelProps> = ({
         </div>
 
         {/* Decision Detail */}
-        <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-          <div style={{ fontSize: "13px", fontWeight: 700, color: "var(--text-primary)" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+          <div style={{ fontSize: "12px", fontWeight: 700, color: "#FFFFFF" }}>
             Using: &ldquo;Golden Hour Coastal Waves&rdquo;
           </div>
-          <div style={{ fontSize: "12px", color: "var(--text-secondary)", lineHeight: "1.4" }}>
-            <strong>Rationale: </strong>Establishes geography and mood before transitioning into high-tempo surf action sequence.
+          <div style={{ fontSize: "11px", color: "#94A3B8", lineHeight: "1.3" }}>
+            <strong style={{ color: "#CBD5E1", fontWeight: 500 }}>Rationale: </strong>Establishes geography and mood before transitioning into high-tempo surf action sequence.
           </div>
         </div>
 
         {/* Confidence Meter */}
         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <span style={{ fontSize: "11px", color: "var(--text-muted)", width: "70px" }}>Confidence</span>
-          <div style={{ flex: 1, height: "6px", background: "var(--bg-subtle)", borderRadius: "3px", overflow: "hidden" }}>
-            <div style={{ width: "91%", height: "100%", background: "var(--accent)", borderRadius: "3px" }} />
+          <span style={{ fontSize: "10px", color: "#64748B", width: "60px" }}>Confidence</span>
+          <div style={{ flex: 1, height: "4px", background: "rgba(255, 255, 255, 0.08)", borderRadius: "2px", overflow: "hidden" }}>
+            <div style={{ width: "91%", height: "100%", background: "#6366F1", borderRadius: "2px", boxShadow: "0 0 6px #6366F1" }} />
           </div>
-          <span style={{ fontSize: "11px", fontWeight: 700, color: "var(--text-primary)" }}>91%</span>
+          <span style={{ fontSize: "10px", fontWeight: 700, color: "#F8FAFC" }}>91%</span>
         </div>
 
         {/* Accept / Change Buttons & Evidence Toggle */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingTop: "4px" }}>
-          <div style={{ display: "flex", gap: "8px" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingTop: "2px" }}>
+          <div style={{ display: "flex", gap: "6px" }}>
             <button
               onClick={() => setDecisionAccepted(true)}
               style={{
                 display: "flex",
                 alignItems: "center",
-                gap: "5px",
-                background: decisionAccepted ? "var(--success)" : "var(--accent)",
+                gap: "4px",
+                background: decisionAccepted ? "linear-gradient(135deg, #10B981, #059669)" : "linear-gradient(135deg, #6366F1, #4F46E5)",
                 color: "#FFFFFF",
                 border: "none",
-                borderRadius: "var(--radius-sm)",
-                padding: "6px 14px",
-                fontSize: "12px",
+                borderRadius: "4px",
+                padding: "5px 12px",
+                fontSize: "11px",
                 fontWeight: 600,
                 cursor: "pointer",
-                transition: "all 0.1s ease",
+                boxShadow: decisionAccepted ? "0 0 10px rgba(16, 185, 129, 0.4)" : "0 0 10px rgba(99, 102, 241, 0.4)",
               }}
             >
-              <CheckCircle2 size={13} />
+              <CheckCircle2 size={12} />
               <span>{decisionAccepted ? "Accepted" : "Accept"}</span>
             </button>
 
@@ -437,19 +445,19 @@ export const AiDirectorCenterPanel: React.FC<AiDirectorCenterPanelProps> = ({
               style={{
                 display: "flex",
                 alignItems: "center",
-                gap: "5px",
-                background: "var(--bg-surface)",
-                border: "1px solid var(--border)",
-                color: "var(--text-secondary)",
-                borderRadius: "var(--radius-sm)",
-                padding: "6px 14px",
-                fontSize: "12px",
+                gap: "4px",
+                background: "rgba(255, 255, 255, 0.06)",
+                border: "1px solid rgba(255, 255, 255, 0.12)",
+                color: "#CBD5E1",
+                borderRadius: "4px",
+                padding: "5px 12px",
+                fontSize: "11px",
                 fontWeight: 600,
                 cursor: "pointer",
               }}
             >
-              <RotateCcw size={12} />
-              <span>Change / Alternative</span>
+              <RotateCcw size={11} />
+              <span>Alternative</span>
             </button>
           </div>
 
@@ -458,16 +466,16 @@ export const AiDirectorCenterPanel: React.FC<AiDirectorCenterPanelProps> = ({
             style={{
               background: "transparent",
               border: "none",
-              color: "var(--text-secondary)",
-              fontSize: "11px",
+              color: "#94A3B8",
+              fontSize: "10px",
               cursor: "pointer",
               display: "flex",
               alignItems: "center",
-              gap: "3px",
+              gap: "2px",
             }}
           >
-            <span>Decision Evidence</span>
-            {showEvidenceDetails ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+            <span>Evidence</span>
+            {showEvidenceDetails ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
           </button>
         </div>
 
@@ -475,26 +483,26 @@ export const AiDirectorCenterPanel: React.FC<AiDirectorCenterPanelProps> = ({
         {showEvidenceDetails && (
           <div
             style={{
-              background: "var(--bg-subtle)",
-              border: "1px solid var(--border)",
-              borderRadius: "var(--radius-sm)",
-              padding: "10px",
-              fontSize: "11px",
+              background: "rgba(11, 14, 21, 0.9)",
+              border: "1px solid rgba(255, 255, 255, 0.08)",
+              borderRadius: "4px",
+              padding: "8px 10px",
+              fontSize: "10px",
               display: "flex",
               flexDirection: "column",
-              gap: "6px",
+              gap: "4px",
             }}
           >
-            <div style={{ fontWeight: 700, color: "var(--danger)" }}>
+            <div style={{ fontWeight: 700, color: "#F87171" }}>
               Rejected Shot 23
             </div>
-            <div style={{ color: "var(--text-secondary)" }}>
+            <div style={{ color: "#94A3B8" }}>
               <strong>Reason: </strong>Redundant establishing shot with lower subject activity.
             </div>
-            <div style={{ color: "var(--text-muted)" }}>
+            <div style={{ color: "#64748B" }}>
               <strong>Evidence: </strong>Same location (Beach North), same 35mm lens angle, 42% lower motion energy.
             </div>
-            <div style={{ color: "var(--success)", fontWeight: 600 }}>
+            <div style={{ color: "#34D399", fontWeight: 600 }}>
               <strong>Selected Alternative: </strong>Shot 31 (Subject enters frame, creating forward narrative momentum).
             </div>
           </div>
@@ -502,12 +510,12 @@ export const AiDirectorCenterPanel: React.FC<AiDirectorCenterPanelProps> = ({
       </div>
 
       {/* 4. Quick Direct Prompt / Feedback Bar ("Ask AI") */}
-      <div style={{ marginTop: "auto", display: "flex", flexDirection: "column", gap: "6px" }}>
-        <span style={{ fontSize: "11px", fontWeight: 700, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+      <div style={{ marginTop: "auto", display: "flex", flexDirection: "column", gap: "4px" }}>
+        <span style={{ fontSize: "10px", fontWeight: 700, color: "#94A3B8", textTransform: "uppercase", letterSpacing: "0.5px" }}>
           Ask AI / Adjust Direction
         </span>
 
-        <form onSubmit={handleSendQuickFeedback} style={{ display: "flex", gap: "8px" }}>
+        <form onSubmit={handleSendQuickFeedback} style={{ display: "flex", gap: "6px" }}>
           <input
             type="text"
             value={quickPrompt}
@@ -515,31 +523,32 @@ export const AiDirectorCenterPanel: React.FC<AiDirectorCenterPanelProps> = ({
             placeholder='e.g. "Make the opening slower" or "Boost dialogue clarity"...'
             style={{
               flex: 1,
-              padding: "8px 12px",
-              fontSize: "12px",
-              background: "#FFFFFF",
-              border: "1px solid var(--border)",
-              borderRadius: "var(--radius-md)",
-              color: "var(--text-primary)",
+              padding: "6px 10px",
+              fontSize: "11px",
+              background: "rgba(11, 14, 21, 0.9)",
+              border: "1px solid rgba(255, 255, 255, 0.12)",
+              borderRadius: "6px",
+              color: "#FFFFFF",
               outline: "none",
             }}
           />
           <button
             type="submit"
             style={{
-              background: "var(--accent)",
+              background: "linear-gradient(135deg, #6366F1, #4F46E5)",
               border: "none",
-              borderRadius: "var(--radius-md)",
+              borderRadius: "6px",
               color: "#FFFFFF",
-              padding: "0 14px",
+              padding: "0 12px",
               cursor: "pointer",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
+              boxShadow: "0 0 10px rgba(99, 102, 241, 0.4)",
             }}
             title="Send prompt"
           >
-            <Send size={13} />
+            <Send size={12} />
           </button>
         </form>
 
@@ -552,8 +561,8 @@ export const AiDirectorCenterPanel: React.FC<AiDirectorCenterPanelProps> = ({
               style={{
                 background: "transparent",
                 border: "none",
-                fontSize: "10px",
-                color: "var(--text-muted)",
+                fontSize: "9px",
+                color: "#64748B",
                 cursor: "pointer",
                 textDecoration: "underline",
               }}

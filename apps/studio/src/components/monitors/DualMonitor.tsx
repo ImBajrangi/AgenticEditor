@@ -8,10 +8,10 @@ import {
   SkipForward,
   Repeat,
   Volume2,
+  VolumeX,
   Maximize2,
   Smartphone,
   Tv,
-  Square,
   ShieldCheck,
 } from "lucide-react";
 import { MediaAsset } from "@/lib/sample-data";
@@ -56,7 +56,7 @@ export const DualMonitor: React.FC<DualMonitorProps> = ({
   const [isLooping, setIsLooping] = useState(false);
   const [showSafeZone, setShowSafeZone] = useState(true);
   const [stageView, setStageView] = useState<"PROGRAM" | "SOURCE" | "SPLIT">("PROGRAM");
-  const [splitPosition, setSplitPosition] = useState(50); // percentage for A/B split wipe
+  const [splitPosition, setSplitPosition] = useState(50);
   const [isDraggingSplit, setIsDraggingSplit] = useState(false);
   const viewportRef = useRef<HTMLDivElement>(null);
 
@@ -101,111 +101,114 @@ export const DualMonitor: React.FC<DualMonitorProps> = ({
   };
 
   return (
-    <div className="preview-stage-box" role="region" aria-label="Playback Stage Monitor">
-      {/* 1. Top Preview Controls Bar (DaVinci Resolve Style Mode Switcher & Guides) */}
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        height: "100%",
+        width: "100%",
+        background: "var(--bg-dark-stage)",
+        padding: "10px 14px",
+        overflow: "hidden",
+        justifyContent: "space-between",
+      }}
+      role="region"
+      aria-label="Playback Stage Monitor"
+    >
+      {/* 1. Top Preview Controls Bar */}
       <div
         style={{
           width: "100%",
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          marginBottom: "10px",
-          padding: "0 8px",
+          marginBottom: "8px",
         }}
       >
         {/* Left: View Modes (Program, Source, A/B Split Comparison) */}
         <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-          <div style={{ display: "flex", background: "var(--bg-subtle)", padding: "2px", borderRadius: "var(--radius-sm)", border: "1px solid var(--border)" }}>
+          <div
+            style={{
+              display: "flex",
+              background: "rgba(255, 255, 255, 0.05)",
+              padding: "2px",
+              borderRadius: "4px",
+              border: "1px solid rgba(255, 255, 255, 0.08)",
+            }}
+          >
             <button
               onClick={() => setStageView("PROGRAM")}
               style={{
-                padding: "3px 8px",
+                padding: "2px 8px",
                 border: "none",
-                borderRadius: "4px",
+                borderRadius: "3px",
                 fontSize: "11px",
                 fontWeight: 600,
-                background: stageView === "PROGRAM" ? "var(--bg-surface)" : "transparent",
-                color: stageView === "PROGRAM" ? "var(--accent)" : "var(--text-secondary)",
+                background: stageView === "PROGRAM" ? "rgba(99, 102, 241, 0.25)" : "transparent",
+                color: stageView === "PROGRAM" ? "#A5B4FC" : "#94A3B8",
                 cursor: "pointer",
-                transition: "all 0.15s ease",
+                transition: "all 0.12s ease",
               }}
-              title="Program Monitor View"
+              title="Program Monitor"
             >
               Program
             </button>
             <button
               onClick={() => setStageView("SOURCE")}
               style={{
-                padding: "3px 8px",
+                padding: "2px 8px",
                 border: "none",
-                borderRadius: "4px",
+                borderRadius: "3px",
                 fontSize: "11px",
                 fontWeight: 600,
-                background: stageView === "SOURCE" ? "var(--bg-surface)" : "transparent",
-                color: stageView === "SOURCE" ? "var(--accent)" : "var(--text-secondary)",
+                background: stageView === "SOURCE" ? "rgba(99, 102, 241, 0.25)" : "transparent",
+                color: stageView === "SOURCE" ? "#A5B4FC" : "#94A3B8",
                 cursor: "pointer",
-                transition: "all 0.15s ease",
+                transition: "all 0.12s ease",
               }}
-              title="Source Media View"
+              title="Source Media"
             >
               Source
             </button>
             <button
               onClick={() => setStageView("SPLIT")}
               style={{
-                padding: "3px 8px",
+                padding: "2px 8px",
                 border: "none",
-                borderRadius: "4px",
+                borderRadius: "3px",
                 fontSize: "11px",
                 fontWeight: 600,
-                background: stageView === "SPLIT" ? "var(--bg-surface)" : "transparent",
-                color: stageView === "SPLIT" ? "var(--accent)" : "var(--text-secondary)",
+                background: stageView === "SPLIT" ? "rgba(99, 102, 241, 0.25)" : "transparent",
+                color: stageView === "SPLIT" ? "#A5B4FC" : "#94A3B8",
                 cursor: "pointer",
-                transition: "all 0.15s ease",
+                transition: "all 0.12s ease",
               }}
-              title="A/B Split Screen Comparison (Original Log vs Graded)"
+              title="A/B Split Screen"
             >
               A/B Split
             </button>
           </div>
 
           {activeClipTitle && (
-            <span style={{ fontSize: "11px", color: "var(--text-secondary)", marginLeft: "6px" }}>
-              Clip: <strong style={{ color: "var(--text-primary)" }}>{activeClipTitle}</strong>
+            <span style={{ fontSize: "11px", color: "#94A3B8", marginLeft: "4px" }}>
+              Clip: <strong style={{ color: "#F8FAFC" }}>{activeClipTitle}</strong>
             </span>
           )}
         </div>
 
         {/* Right: Aspect Ratio & Safe Zone Guides */}
         <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-          {activeLut && (
-            <span
-              style={{
-                fontSize: "10px",
-                fontWeight: 600,
-                background: "var(--warning-soft)",
-                color: "var(--warning)",
-                padding: "2px 6px",
-                borderRadius: "4px",
-                border: "1px solid rgba(217, 145, 0, 0.2)",
-                fontFamily: "monospace",
-              }}
-            >
-              3D LUT: 5207 Filmic
-            </span>
-          )}
-
           <button
             onClick={() => setShowSafeZone(!showSafeZone)}
             style={{
               display: "flex",
               alignItems: "center",
-              gap: "4px",
-              background: showSafeZone ? "var(--accent-soft)" : "var(--bg-subtle)",
-              border: showSafeZone ? "1px solid var(--accent-border)" : "1px solid var(--border)",
-              color: showSafeZone ? "var(--accent)" : "var(--text-secondary)",
+              gap: "3px",
+              background: showSafeZone ? "rgba(99, 102, 241, 0.2)" : "rgba(255, 255, 255, 0.05)",
+              border: showSafeZone ? "1px solid rgba(99, 102, 241, 0.4)" : "1px solid rgba(255, 255, 255, 0.08)",
+              color: showSafeZone ? "#A5B4FC" : "#94A3B8",
               padding: "3px 8px",
-              borderRadius: "var(--radius-sm)",
+              borderRadius: "4px",
               fontSize: "11px",
               fontWeight: 500,
               cursor: "pointer",
@@ -222,17 +225,16 @@ export const DualMonitor: React.FC<DualMonitorProps> = ({
               display: "flex",
               alignItems: "center",
               gap: "4px",
-              background: "var(--bg-surface)",
-              border: "1px solid var(--border)",
-              color: "var(--text-primary)",
+              background: "rgba(255, 255, 255, 0.06)",
+              border: "1px solid rgba(255, 255, 255, 0.12)",
+              color: "#F8FAFC",
               padding: "3px 8px",
-              borderRadius: "var(--radius-sm)",
+              borderRadius: "4px",
               fontSize: "11px",
               fontWeight: 600,
               cursor: "pointer",
-              boxShadow: "var(--shadow-xs)",
             }}
-            title="Toggle 16:9 Landscape / 9:16 Vertical Reframe"
+            title="Toggle Format"
           >
             {aspectRatio === "16:9" ? <Tv size={12} /> : <Smartphone size={12} />}
             <span>{aspectRatio}</span>
@@ -243,16 +245,27 @@ export const DualMonitor: React.FC<DualMonitorProps> = ({
       {/* 2. Main Video Canvas Viewport */}
       <div
         ref={viewportRef}
-        className={`canvas-viewport ${aspectRatio === "9:16" ? "canvas-viewport-9-16" : ""}`}
         onMouseMove={handleSplitMouseMove}
         onMouseUp={() => setIsDraggingSplit(false)}
         onMouseLeave={() => setIsDraggingSplit(false)}
-        style={{ position: "relative", overflow: "hidden", userSelect: "none" }}
+        style={{
+          flex: 1,
+          width: "100%",
+          maxHeight: "calc(100% - 54px)",
+          position: "relative",
+          borderRadius: "8px",
+          overflow: "hidden",
+          userSelect: "none",
+          background: "#000000",
+          boxShadow: "0 8px 30px rgba(0, 0, 0, 0.7)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
       >
         {stageView === "SPLIT" ? (
-          /* DaVinci Resolve Color Page A/B Split Screen Wipe */
+          /* A/B Split Screen Wipe */
           <div style={{ position: "relative", width: "100%", height: "100%" }}>
-            {/* Left: Original Ungraded Base */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={selectedAsset?.thumbnailUrl || "https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=1400&auto=format&fit=crop&q=80"}
@@ -267,7 +280,6 @@ export const DualMonitor: React.FC<DualMonitorProps> = ({
               }}
             />
 
-            {/* Right: 3D LUT Graded Overlay with Clip-Path */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={selectedAsset?.thumbnailUrl || "https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=1400&auto=format&fit=crop&q=80"}
@@ -283,7 +295,7 @@ export const DualMonitor: React.FC<DualMonitorProps> = ({
               }}
             />
 
-            {/* Draggable Divider Line */}
+            {/* Divider Line */}
             <div
               onMouseDown={() => setIsDraggingSplit(true)}
               style={{
@@ -291,45 +303,25 @@ export const DualMonitor: React.FC<DualMonitorProps> = ({
                 top: 0,
                 bottom: 0,
                 left: `${splitPosition}%`,
-                width: "4px",
-                background: "var(--accent)",
+                width: "3px",
+                background: "#6366F1",
                 cursor: "ew-resize",
                 zIndex: 10,
                 transform: "translateX(-50%)",
-                boxShadow: "0 0 8px rgba(79, 115, 247, 0.8)",
+                boxShadow: "0 0 10px rgba(99, 102, 241, 0.8)",
               }}
-            >
-              <div
-                style={{
-                  position: "absolute",
-                  top: "50%",
-                  left: "50%",
-                  transform: "translate(-50%, -50%)",
-                  width: "20px",
-                  height: "20px",
-                  borderRadius: "50%",
-                  background: "var(--accent)",
-                  border: "2px solid white",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  boxShadow: "0 2px 6px rgba(0,0,0,0.5)",
-                }}
-              >
-                <div style={{ width: "6px", height: "1px", background: "white" }} />
-              </div>
-            </div>
+            />
 
-            {/* Badges for Split Sides */}
-            <span style={{ position: "absolute", top: "10px", left: "10px", fontSize: "10px", background: "rgba(0,0,0,0.7)", color: "white", padding: "2px 6px", borderRadius: "3px", fontWeight: 600, pointerEvents: "none" }}>
-              Original (Log/Rec.709)
+            {/* Badges */}
+            <span style={{ position: "absolute", top: "8px", left: "8px", fontSize: "9px", background: "rgba(0,0,0,0.75)", color: "white", padding: "2px 6px", borderRadius: "3px", fontWeight: 600 }}>
+              Original
             </span>
-            <span style={{ position: "absolute", top: "10px", right: "10px", fontSize: "10px", background: "rgba(79, 115, 247, 0.85)", color: "white", padding: "2px 6px", borderRadius: "3px", fontWeight: 600, pointerEvents: "none" }}>
-              Graded (3D LUT CUBE)
+            <span style={{ position: "absolute", top: "8px", right: "8px", fontSize: "9px", background: "rgba(99, 102, 241, 0.85)", color: "white", padding: "2px 6px", borderRadius: "3px", fontWeight: 600 }}>
+              Graded (3D LUT)
             </span>
           </div>
         ) : (
-          /* Normal Program / Source View */
+          /* Normal Monitor View */
           /* eslint-disable-next-line @next/next/no-img-element */
           <img
             src={
@@ -347,200 +339,176 @@ export const DualMonitor: React.FC<DualMonitorProps> = ({
           />
         )}
 
-        {/* 9:16 Reels / TikTok Safe Zone Guide */}
+        {/* 9:16 Guide */}
         {aspectRatio === "9:16" && showSafeZone && (
           <div
             style={{
               position: "absolute",
-              inset: "16px 12px",
-              border: "1px dashed rgba(255, 255, 255, 0.4)",
+              inset: "14px 10px",
+              border: "1px dashed rgba(255, 255, 255, 0.35)",
               pointerEvents: "none",
               display: "flex",
               alignItems: "flex-end",
               justifyContent: "center",
-              paddingBottom: "8px",
+              paddingBottom: "6px",
             }}
           >
-            <span
-              style={{
-                fontSize: "9px",
-                color: "white",
-                background: "rgba(0, 0, 0, 0.7)",
-                padding: "2px 6px",
-                borderRadius: "3px",
-              }}
-            >
-              Shorts / Reels Safe Zone
+            <span style={{ fontSize: "9px", color: "white", background: "rgba(0, 0, 0, 0.7)", padding: "1px 5px", borderRadius: "3px" }}>
+              Reels Safe Zone
             </span>
           </div>
         )}
 
-        {/* Realtime Canvas HUD (Timecode & Color Space) */}
+        {/* Clean Monitor HUD Timecode */}
         <div
           style={{
             position: "absolute",
             bottom: "8px",
             left: "8px",
-            right: "8px",
             display: "flex",
-            justifyContent: "space-between",
+            alignItems: "center",
+            gap: "8px",
             fontSize: "10px",
-            fontFamily: "monospace",
-            color: "rgba(255, 255, 255, 0.9)",
-            background: "rgba(0, 0, 0, 0.65)",
-            padding: "3px 8px",
+            fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, monospace",
+            color: "#FFFFFF",
+            background: "rgba(0, 0, 0, 0.7)",
+            padding: "2px 8px",
             borderRadius: "4px",
-            pointerEvents: "none",
             backdropFilter: "blur(4px)",
+            pointerEvents: "none",
           }}
         >
-          <span style={{ fontWeight: 600 }}>{formatTimecode(currentFrame)}</span>
-          <span>{fps} FPS • Rec.709 D65 • Hardware 60Hz</span>
+          <span style={{ fontWeight: 700 }}>{formatTimecode(currentFrame)}</span>
+          <span style={{ color: "#94A3B8" }}>• {fps} FPS</span>
         </div>
       </div>
 
-      {/* 3. DaVinci Resolve Professional Playback Transport Bar */}
-      <div className="playback-hud-bar">
-        {/* Left: Transport Buttons (Jump Start, Step Back, Play/Pause, Step Forward, Jump End, Loop) */}
-        <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
+      {/* 3. Sleek Dark Obsidian Transport Bar */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          width: "100%",
+          marginTop: "8px",
+          background: "rgba(18, 21, 30, 0.8)",
+          border: "1px solid rgba(255, 255, 255, 0.08)",
+          borderRadius: "6px",
+          padding: "5px 12px",
+        }}
+      >
+        {/* Left: J-K-L Shuttle & Stepping */}
+        <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
           <button
-            className="btn-icon-subtle"
-            style={{ padding: "5px" }}
             onClick={jumpToStart}
-            title="Jump to Start / In Point (Home / Shift+I)"
-            aria-label="Jump to Start"
-          >
-            <SkipBack size={13} style={{ fill: "currentColor" }} />
-          </button>
-
-          <button
-            className="btn-icon-subtle"
-            style={{ padding: "5px" }}
-            onClick={() => stepFrame(-1)}
-            title="Step Back 1 Frame (Left Arrow / J)"
-            aria-label="Step Back 1 Frame"
+            style={{ background: "transparent", border: "none", color: "#94A3B8", cursor: "pointer", padding: "4px" }}
+            title="Jump to Start (Home)"
           >
             <SkipBack size={13} />
           </button>
-
-          {/* Master Play/Pause Button */}
           <button
-            onClick={() => onTogglePlay()}
+            onClick={() => stepFrame(-1)}
+            style={{ background: "transparent", border: "none", color: "#94A3B8", cursor: "pointer", padding: "4px", fontSize: "11px", fontWeight: 700 }}
+            title="Step Back 1 Frame (←)"
+          >
+            -1f
+          </button>
+
+          {/* Big Play / Pause Button */}
+          <button
+            onClick={onTogglePlay}
             style={{
-              width: "32px",
-              height: "32px",
+              width: "28px",
+              height: "28px",
               borderRadius: "50%",
-              background: "var(--accent)",
-              color: "white",
+              background: "linear-gradient(135deg, #6366F1 0%, #4F46E5 100%)",
+              border: "none",
+              color: "#FFFFFF",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              border: "none",
               cursor: "pointer",
-              boxShadow: "0 2px 6px rgba(79, 115, 247, 0.4)",
-              transition: "transform 0.1s ease",
+              boxShadow: "0 0 10px rgba(99, 102, 241, 0.4)",
+              margin: "0 2px",
             }}
             title={isPlaying ? "Pause (Space / K)" : "Play (Space / L)"}
-            aria-label={isPlaying ? "Pause" : "Play"}
           >
-            {isPlaying ? <Pause size={15} /> : <Play size={15} style={{ marginLeft: "2px" }} />}
+            {isPlaying ? <Pause size={13} /> : <Play size={13} style={{ marginLeft: "1px" }} />}
           </button>
 
           <button
-            className="btn-icon-subtle"
-            style={{ padding: "5px" }}
             onClick={() => stepFrame(1)}
-            title="Step Forward 1 Frame (Right Arrow / L)"
-            aria-label="Step Forward 1 Frame"
+            style={{ background: "transparent", border: "none", color: "#94A3B8", cursor: "pointer", padding: "4px", fontSize: "11px", fontWeight: 700 }}
+            title="Step Forward 1 Frame (→)"
+          >
+            +1f
+          </button>
+          <button
+            onClick={jumpToEnd}
+            style={{ background: "transparent", border: "none", color: "#94A3B8", cursor: "pointer", padding: "4px" }}
+            title="Jump to End (End)"
           >
             <SkipForward size={13} />
           </button>
+        </div>
 
+        {/* Center: In / Out Markers */}
+        <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
           <button
-            className="btn-icon-subtle"
-            style={{ padding: "5px" }}
-            onClick={jumpToEnd}
-            title="Jump to End / Out Point (End / Shift+O)"
-            aria-label="Jump to End"
-          >
-            <SkipForward size={13} style={{ fill: "currentColor" }} />
-          </button>
-
-          {/* Loop Toggle */}
-          <button
-            onClick={() => setIsLooping(!isLooping)}
-            className="btn-icon-subtle"
+            onClick={() => onSetInPoint && onSetInPoint(currentFrame)}
             style={{
-              padding: "5px",
-              color: isLooping ? "var(--accent)" : "var(--text-secondary)",
-              background: isLooping ? "var(--accent-soft)" : "transparent",
-              borderRadius: "var(--radius-xs)",
+              background: inPoint !== null ? "rgba(99, 102, 241, 0.2)" : "rgba(255, 255, 255, 0.05)",
+              border: "1px solid rgba(255, 255, 255, 0.1)",
+              color: inPoint !== null ? "#A5B4FC" : "#94A3B8",
+              padding: "2px 6px",
+              borderRadius: "3px",
+              fontSize: "10px",
+              fontWeight: 600,
+              cursor: "pointer",
             }}
-            title={isLooping ? "Looping: ON (Cmd+L)" : "Looping: OFF (Cmd+L)"}
-            aria-label="Loop Playback"
+            title="Set In Point (I)"
           >
-            <Repeat size={13} />
+            [ IN
           </button>
-
-          {/* In & Out Point Controls */}
-          <div style={{ display: "flex", gap: "2px", marginLeft: "4px", borderLeft: "1px solid var(--border)", paddingLeft: "6px" }}>
-            <button
-              onClick={() => onSetInPoint?.(currentFrame)}
-              className="btn-icon-subtle"
-              style={{ padding: "3px 6px", fontSize: "10px", fontWeight: 700, borderRadius: "3px" }}
-              title="Mark In Point (I)"
-            >
-              [ IN
-            </button>
-            <button
-              onClick={() => onSetOutPoint?.(currentFrame)}
-              className="btn-icon-subtle"
-              style={{ padding: "3px 6px", fontSize: "10px", fontWeight: 700, borderRadius: "3px" }}
-              title="Mark Out Point (O)"
-            >
-              OUT ]
-            </button>
-          </div>
+          <button
+            onClick={() => onSetOutPoint && onSetOutPoint(currentFrame)}
+            style={{
+              background: outPoint !== null ? "rgba(99, 102, 241, 0.2)" : "rgba(255, 255, 255, 0.05)",
+              border: "1px solid rgba(255, 255, 255, 0.1)",
+              color: outPoint !== null ? "#A5B4FC" : "#94A3B8",
+              padding: "2px 6px",
+              borderRadius: "3px",
+              fontSize: "10px",
+              fontWeight: 600,
+              cursor: "pointer",
+            }}
+            title="Set Out Point (O)"
+          >
+            OUT ]
+          </button>
         </div>
 
-        {/* Center: Frame-accurate Tabular Timecode Display (SMPTE Drop-Frame Standard) */}
-        <div className="timecode-chip" style={{ letterSpacing: "0.5px", fontVariantNumeric: "tabular-nums" }}>
-          <span>{formatTimecode(currentFrame)}</span>
-          <span style={{ color: "var(--text-muted)", margin: "0 4px" }}>/</span>
-          <span style={{ color: "var(--text-secondary)" }}>{formatTimecode(totalFrames)}</span>
-        </div>
-
-        {/* Right: Audio Volume Slider & Fullscreen Monitor */}
+        {/* Right: Timecode Display & Fullscreen */}
         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
-            <button
-              onClick={() => setIsMuted(!isMuted)}
-              className="btn-icon-subtle"
-              style={{ padding: "4px" }}
-              title={isMuted ? "Unmute Monitor Audio" : "Mute Monitor Audio"}
-            >
-              <Volume2 size={13} style={{ color: isMuted ? "var(--danger)" : "var(--text-secondary)" }} />
-            </button>
-            <input
-              type="range"
-              min="0"
-              max="100"
-              value={isMuted ? 0 : volume}
-              onChange={(e) => {
-                setVolume(Number(e.target.value));
-                if (isMuted) setIsMuted(false);
-              }}
-              style={{ width: "55px", accentColor: "var(--accent)", cursor: "pointer" }}
-              title={`Monitor Volume: ${isMuted ? "0%" : `${volume}%`}`}
-            />
+          <div
+            style={{
+              fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, monospace",
+              fontSize: "11px",
+              fontWeight: 600,
+              color: "#F8FAFC",
+              background: "rgba(11, 14, 21, 0.9)",
+              padding: "3px 8px",
+              borderRadius: "4px",
+              border: "1px solid rgba(255, 255, 255, 0.08)",
+            }}
+          >
+            {formatTimecode(currentFrame)} / {formatTimecode(totalFrames)}
           </div>
 
           <button
             onClick={toggleFullscreen}
-            className="btn-icon-subtle"
-            style={{ padding: "5px" }}
-            title="Toggle Cinema Fullscreen (F)"
-            aria-label="Fullscreen Preview"
+            style={{ background: "transparent", border: "none", color: "#94A3B8", cursor: "pointer", padding: "2px" }}
+            title="Toggle Fullscreen"
           >
             <Maximize2 size={13} />
           </button>

@@ -6,19 +6,13 @@ import {
   XCircle,
   Scissors,
   Sparkles,
-  ArrowRight,
-  ShieldAlert,
   RotateCcw,
   Volume2,
   Palette,
   Gauge,
-  Check,
-  Layers,
   ArrowDownRight,
   TrendingUp,
   Maximize2,
-  RefreshCw,
-  Film,
 } from "lucide-react";
 
 export type AiDiffState =
@@ -40,8 +34,8 @@ interface DiffChangeItem {
 }
 
 interface ReviewDiffPanelProps {
-  timelineVersionBefore: number;
-  timelineVersionAfter: number;
+  timelineVersionBefore?: number;
+  timelineVersionAfter?: number;
   diffState?: AiDiffState;
   onAcceptAll: () => void;
   onRejectAll: () => void;
@@ -66,9 +60,7 @@ export const ReviewDiffPanel: React.FC<ReviewDiffPanelProps> = ({
     "chg_5",
     "chg_6",
   ]);
-  const [activeVisualTab, setActiveVisualTab] = useState<"QUALITY_IMPACT" | "VISUAL_DIFF" | "LIST">("QUALITY_IMPACT");
 
-  // Semantic timeline changes reflecting real Timeline IR mutations
   const proposedChanges: DiffChangeItem[] = [
     {
       id: "chg_1",
@@ -121,10 +113,10 @@ export const ReviewDiffPanel: React.FC<ReviewDiffPanelProps> = ({
   ];
 
   const qualityDeltas = [
-    { metric: "Narrative Coherence", delta: "+0.18", score: "9.2 / 10", color: "#6366F1", positive: true },
-    { metric: "Pacing & Rhythm", delta: "+0.31", score: "9.4 / 10", color: "#10B981", positive: true },
-    { metric: "Visual Coverage", delta: "+0.08", score: "8.9 / 10", color: "#3B82F6", positive: true },
-    { metric: "Audio Balance & LUFS", delta: "+0.12", score: "9.5 / 10", color: "#F59E0B", positive: true },
+    { metric: "Narrative Coherence", delta: "+0.18", score: "9.2 / 10", color: "#818CF8" },
+    { metric: "Pacing & Rhythm", delta: "+0.31", score: "9.4 / 10", color: "#34D399" },
+    { metric: "Visual Coverage", delta: "+0.08", score: "8.9 / 10", color: "#38BDF8" },
+    { metric: "Audio Balance & LUFS", delta: "+0.12", score: "9.5 / 10", color: "#FBBF24" },
   ];
 
   const toggleSelectChange = (id: string) => {
@@ -136,19 +128,19 @@ export const ReviewDiffPanel: React.FC<ReviewDiffPanelProps> = ({
   const getCategoryIcon = (category: string) => {
     switch (category) {
       case "CUT":
-        return <Scissors size={13} style={{ color: "var(--danger)" }} />;
+        return <Scissors size={13} style={{ color: "#EF4444" }} />;
       case "RIPPLE":
-        return <ArrowDownRight size={13} style={{ color: "var(--accent)" }} />;
+        return <ArrowDownRight size={13} style={{ color: "#6366F1" }} />;
       case "SPEED":
-        return <Gauge size={13} style={{ color: "var(--warning)" }} />;
+        return <Gauge size={13} style={{ color: "#F59E0B" }} />;
       case "AUDIO":
-        return <Volume2 size={13} style={{ color: "var(--success)" }} />;
+        return <Volume2 size={13} style={{ color: "#10B981" }} />;
       case "COLOR":
         return <Palette size={13} style={{ color: "#EC4899" }} />;
       case "REFRAME":
         return <Maximize2 size={13} style={{ color: "#38BDF8" }} />;
       default:
-        return <Sparkles size={13} style={{ color: "var(--accent)" }} />;
+        return <Sparkles size={13} style={{ color: "#6366F1" }} />;
     }
   };
 
@@ -159,7 +151,8 @@ export const ReviewDiffPanel: React.FC<ReviewDiffPanelProps> = ({
         flexDirection: "column",
         height: "100%",
         width: "100%",
-        background: "var(--bg-surface)",
+        background: "#0B0D13",
+        color: "#F8FAFC",
         padding: "20px 24px",
         overflowY: "auto",
         gap: "16px",
@@ -172,28 +165,29 @@ export const ReviewDiffPanel: React.FC<ReviewDiffPanelProps> = ({
           alignItems: "center",
           justifyContent: "space-between",
           paddingBottom: "14px",
-          borderBottom: "1px solid var(--border)",
+          borderBottom: "1px solid rgba(255, 255, 255, 0.08)",
         }}
       >
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <span style={{ fontSize: "16px", fontWeight: 800, color: "var(--text-primary)" }}>
+            <span style={{ fontSize: "16px", fontWeight: 800, color: "#FFFFFF", letterSpacing: "0.2px" }}>
               AI EDIT #17 REVIEW
             </span>
             <span
               style={{
-                fontSize: "11px",
+                fontSize: "10px",
                 fontWeight: 700,
-                background: "var(--accent-soft)",
-                color: "var(--accent)",
+                background: "rgba(99, 102, 241, 0.2)",
+                color: "#A5B4FC",
                 padding: "2px 8px",
                 borderRadius: "4px",
+                border: "1px solid rgba(99, 102, 241, 0.35)",
               }}
             >
               v{timelineVersionBefore} → v{timelineVersionAfter}
             </span>
           </div>
-          <span style={{ fontSize: "12px", color: "var(--text-secondary)" }}>
+          <span style={{ fontSize: "12px", color: "#94A3B8" }}>
             Inspect AI mutations, measured quality delta, and approve changes in 1 stroke
           </span>
         </div>
@@ -205,17 +199,18 @@ export const ReviewDiffPanel: React.FC<ReviewDiffPanelProps> = ({
               display: "flex",
               alignItems: "center",
               gap: "5px",
-              background: "var(--bg-surface)",
-              border: "1px solid var(--border)",
-              color: "var(--danger)",
-              borderRadius: "var(--radius-sm)",
-              padding: "7px 14px",
+              background: "rgba(239, 68, 68, 0.12)",
+              border: "1px solid rgba(239, 68, 68, 0.3)",
+              color: "#F87171",
+              borderRadius: "4px",
+              padding: "6px 14px",
               fontSize: "12px",
               fontWeight: 600,
               cursor: "pointer",
+              transition: "all 0.15s ease",
             }}
           >
-            <XCircle size={14} />
+            <XCircle size={13} />
             <span>Revert</span>
           </button>
 
@@ -228,15 +223,16 @@ export const ReviewDiffPanel: React.FC<ReviewDiffPanelProps> = ({
               background: "linear-gradient(135deg, #10B981 0%, #059669 100%)",
               color: "#FFFFFF",
               border: "none",
-              borderRadius: "var(--radius-sm)",
-              padding: "7px 18px",
+              borderRadius: "4px",
+              padding: "6px 16px",
               fontSize: "12px",
               fontWeight: 700,
               cursor: "pointer",
-              boxShadow: "0 2px 8px rgba(16, 185, 129, 0.3)",
+              boxShadow: "0 0 14px rgba(16, 185, 129, 0.4)",
+              transition: "all 0.15s ease",
             }}
           >
-            <CheckCircle2 size={14} />
+            <CheckCircle2 size={13} />
             <span>Keep Changes</span>
           </button>
         </div>
@@ -245,23 +241,24 @@ export const ReviewDiffPanel: React.FC<ReviewDiffPanelProps> = ({
       {/* 2. Quality Impact Matrix (ΔQuality) */}
       <div
         style={{
-          background: "linear-gradient(135deg, rgba(79, 115, 247, 0.05) 0%, rgba(16, 185, 129, 0.05) 100%)",
-          border: "1px solid var(--accent-border)",
-          borderRadius: "var(--radius-md)",
+          background: "rgba(22, 27, 40, 0.7)",
+          border: "1px solid rgba(99, 102, 241, 0.25)",
+          borderRadius: "8px",
           padding: "16px",
           display: "flex",
           flexDirection: "column",
           gap: "10px",
+          boxShadow: "0 8px 24px rgba(0, 0, 0, 0.4)",
         }}
       >
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-            <TrendingUp size={16} style={{ color: "var(--accent)" }} />
-            <span style={{ fontSize: "13px", fontWeight: 700, color: "var(--text-primary)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+            <TrendingUp size={15} style={{ color: "#818CF8" }} />
+            <span style={{ fontSize: "12px", fontWeight: 700, color: "#FFFFFF", textTransform: "uppercase", letterSpacing: "0.5px" }}>
               Quality Impact (ΔQuality Benchmark)
             </span>
           </div>
-          <span style={{ fontSize: "11px", color: "var(--success)", fontWeight: 700 }}>
+          <span style={{ fontSize: "11px", color: "#34D399", fontWeight: 700 }}>
             Overall Gain: +0.21 ΔQuality
           </span>
         </div>
@@ -271,24 +268,23 @@ export const ReviewDiffPanel: React.FC<ReviewDiffPanelProps> = ({
             <div
               key={qd.metric}
               style={{
-                background: "#FFFFFF",
-                border: "1px solid var(--border)",
-                borderRadius: "var(--radius-sm)",
+                background: "rgba(11, 14, 21, 0.8)",
+                border: "1px solid rgba(255, 255, 255, 0.08)",
+                borderRadius: "6px",
                 padding: "10px 12px",
                 display: "flex",
                 flexDirection: "column",
-                gap: "4px",
-                boxShadow: "var(--shadow-xs)",
+                gap: "3px",
               }}
             >
-              <span style={{ fontSize: "11px", color: "var(--text-secondary)", fontWeight: 500 }}>
+              <span style={{ fontSize: "11px", color: "#94A3B8", fontWeight: 500 }}>
                 {qd.metric}
               </span>
               <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
                 <span style={{ fontSize: "18px", fontWeight: 800, color: qd.color }}>
                   {qd.delta}
                 </span>
-                <span style={{ fontSize: "11px", color: "var(--text-muted)", fontFamily: "monospace" }}>
+                <span style={{ fontSize: "10px", color: "#64748B", fontFamily: "monospace" }}>
                   Score {qd.score}
                 </span>
               </div>
@@ -298,17 +294,17 @@ export const ReviewDiffPanel: React.FC<ReviewDiffPanelProps> = ({
       </div>
 
       {/* 3. Changed Mutations List */}
-      <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <span style={{ fontSize: "12px", fontWeight: 700, textTransform: "uppercase", color: "var(--text-secondary)", letterSpacing: "0.5px" }}>
+          <span style={{ fontSize: "11px", fontWeight: 700, textTransform: "uppercase", color: "#94A3B8", letterSpacing: "0.5px" }}>
             Changed Operations ({selectedChangeIds.length} of {proposedChanges.length})
           </span>
-          <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>
+          <span style={{ fontSize: "11px", color: "#64748B" }}>
             Click item to toggle inclusion
           </span>
         </div>
 
-        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
           {proposedChanges.map((chg) => {
             const isSelected = selectedChangeIds.includes(chg.id);
             return (
@@ -316,15 +312,14 @@ export const ReviewDiffPanel: React.FC<ReviewDiffPanelProps> = ({
                 key={chg.id}
                 onClick={() => toggleSelectChange(chg.id)}
                 style={{
-                  background: isSelected ? "var(--bg-surface)" : "var(--bg-subtle)",
-                  border: isSelected ? "1px solid var(--accent-border)" : "1px solid var(--border)",
-                  borderRadius: "var(--radius-sm)",
+                  background: isSelected ? "rgba(22, 27, 40, 0.8)" : "rgba(255, 255, 255, 0.02)",
+                  border: isSelected ? "1px solid rgba(99, 102, 241, 0.35)" : "1px solid rgba(255, 255, 255, 0.06)",
+                  borderRadius: "6px",
                   padding: "10px 14px",
                   display: "flex",
                   flexDirection: "column",
-                  gap: "3px",
+                  gap: "2px",
                   cursor: "pointer",
-                  boxShadow: isSelected ? "var(--shadow-xs)" : "none",
                   transition: "all 0.1s ease",
                 }}
               >
@@ -334,30 +329,30 @@ export const ReviewDiffPanel: React.FC<ReviewDiffPanelProps> = ({
                       type="checkbox"
                       checked={isSelected}
                       onChange={() => {}}
-                      style={{ accentColor: "var(--accent)" }}
+                      style={{ accentColor: "#6366F1" }}
                     />
                     {getCategoryIcon(chg.category)}
                     <span
                       style={{
-                        fontSize: "13px",
+                        fontSize: "12px",
                         fontWeight: 700,
-                        color: chg.typeSign === "-" ? "var(--danger)" : "var(--text-primary)",
+                        color: chg.typeSign === "-" ? "#F87171" : "#FFFFFF",
                       }}
                     >
                       {chg.title}
                     </span>
                   </div>
 
-                  <span style={{ fontSize: "10px", fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase" }}>
+                  <span style={{ fontSize: "9px", fontWeight: 700, color: "#64748B", textTransform: "uppercase" }}>
                     {chg.category}
                   </span>
                 </div>
 
-                <div style={{ paddingLeft: "26px", display: "flex", flexDirection: "column", gap: "1px" }}>
-                  <span style={{ fontSize: "12px", color: "var(--text-secondary)" }}>
+                <div style={{ paddingLeft: "26px", display: "flex", flexDirection: "column" }}>
+                  <span style={{ fontSize: "11px", color: "#94A3B8" }}>
                     {chg.detail}
                   </span>
-                  <span style={{ fontSize: "10px", color: "var(--text-muted)", fontFamily: "monospace" }}>
+                  <span style={{ fontSize: "9px", color: "#64748B", fontFamily: "monospace" }}>
                     {chg.target}
                   </span>
                 </div>
@@ -369,13 +364,13 @@ export const ReviewDiffPanel: React.FC<ReviewDiffPanelProps> = ({
 
       {/* 4. Bottom Quick Revert / Undo Section */}
       {onUndoAiChanges && (
-        <div style={{ marginTop: "auto", paddingTop: "12px", borderTop: "1px solid var(--border)", textAlign: "center" }}>
+        <div style={{ marginTop: "auto", paddingTop: "12px", borderTop: "1px solid rgba(255, 255, 255, 0.08)", textAlign: "center" }}>
           <button
             onClick={onUndoAiChanges}
             style={{
               background: "transparent",
               border: "none",
-              color: "var(--text-muted)",
+              color: "#64748B",
               fontSize: "11px",
               cursor: "pointer",
               display: "inline-flex",
@@ -383,7 +378,7 @@ export const ReviewDiffPanel: React.FC<ReviewDiffPanelProps> = ({
               gap: "4px",
             }}
           >
-            <RotateCcw size={12} />
+            <RotateCcw size={11} />
             <span>Revert Entire AI Session to Checkpoint 0</span>
           </button>
         </div>
